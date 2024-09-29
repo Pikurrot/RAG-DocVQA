@@ -1,6 +1,6 @@
 import transformers
 from src.rag_vt5 import RAGVT5
-from src.SP_DocVQA import SPDocVQA
+from src.MP_DocVQA import MPDocVQA
 from transformers import get_scheduler
 
 
@@ -25,4 +25,4 @@ def build_dataset(config, split):
 		"get_raw_ocr_data": True,
 		"use_images": True,
 	}
-	return SPDocVQA(config["imdb_dir"], config["images_dir"], split, dataset_kwargs)
+	return MPDocVQA(config["imdb_dir"], config["images_dir"], config["page_retrieval"], split, dataset_kwargs)

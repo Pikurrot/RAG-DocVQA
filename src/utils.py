@@ -8,7 +8,7 @@ import json
 import argparse
 import numpy as np
 import torch
-
+from collections import defaultdict
 
 def parse_args():
 	parser = argparse.ArgumentParser(description="MP-DocVQA framework")
@@ -134,7 +134,8 @@ def load_config(args):
 		print('Seed not specified. Setting default seed to "{:d}"'.format(42))
 		config["seed"] = 42
 
-	config["page_retrieval"] = "concat"
+	if "page_retrieval" not in config:
+		config["page_retrieval"] = "concat"
 	check_config(config)
 
 	return config
@@ -218,3 +219,9 @@ def create_grid_image(images, boxes=None):
 
 	boxes = np.concatenate(boxes)
 	return grid, boxes
+
+def separate_context(context_str: str, context_idx: list):
+	doc_dict = defaultdict(list)
+	for char, doc_idx in zip(context_str, context_idx):
+		doc_dict[doc_idx].append(char)
+	return ["".join(chars) for chars in doc_dict.values()]

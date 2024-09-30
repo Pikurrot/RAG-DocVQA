@@ -115,3 +115,20 @@ def shift_tokens_right(input_ids, pad_token_id, decoder_start_token_id):
 	shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
 
 	return shifted_input_ids
+
+def torch_no_grad(func):
+	def wrapper(*args, **kwargs):
+		with torch.no_grad():
+			return func(*args, **kwargs)
+	return wrapper
+
+def mean_pooling(embs: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+	"""
+	Obtain sentence embeddings by mean pooling the embeddings of the tokens.
+	"""
+	attention_mask_expanded = attention_mask.unsqueeze(-1).expand(embs.size())
+	masked_embs = embs * attention_mask_expanded
+	sum_embeddings = masked_embs.sum(dim=1)
+	non_padding_counts = attention_mask.sum(dim=1).unsqueeze(-1).clamp(min=1e-9)
+	mean_embedding = sum_embeddings / non_padding_counts
+	return mean_embedding

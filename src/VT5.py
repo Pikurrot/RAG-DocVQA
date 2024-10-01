@@ -4,6 +4,7 @@ import torch
 from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneration
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
 from src._model_utils import shift_tokens_right, get_generative_confidence
+from typing import Any
 
 class VT5ForConditionalGeneration(PreTrainedModel):
 	config_class = CustomT5Config
@@ -22,15 +23,24 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.save_dir = config.get("save_dir", "save/")
 		self.batch_size = config.get("batch_size", 16)
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
-		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
+		# self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
+		self.page_retrieval = "concat"
 		self.max_source_length = config.get("max_source_length", 512)
 
-	def to(self, device):
+	def to(self, device: Any):
 		self.spatial_embedding.to(device)
 		self.visual_embedding.to(device)
 		self.language_backbone.to(device)
 
-	def prepare_inputs_for_vqa(self, question, words, boxes, images, answers=None, return_ids=False):
+	def prepare_inputs_for_vqa(
+			self,
+			question: list, # (bs,)
+			words: list, # (bs, n_words)
+			boxes: list, # (bs, n_words, 4)
+			images: list, # (bs,) PIL images
+			answers: bool=None, # (bs, n_answers)
+			return_ids: bool=False # 
+	):
 		bs = len(words)
 		prompt_text = ["question: {:s}  context: ".format(q) for q in question]
 		prompt_box = [0, 0, 1000, 1000]
@@ -43,11 +53,11 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		batch_input_boxes = []
 		for batch_idx in range(bs):
 			tokenized_prompt = self.tokenizer(prompt_text[batch_idx])
-			input_ids = tokenized_prompt.input_ids[:-1]
-			input_boxes = [prompt_box] * len(input_ids)
+			input_ids = tokenized_prompt.input_ids[:-1] # (n_tokens,)
+			input_boxes = [prompt_box] * len(input_ids) # (n_tokens, 4)
 
 			for word, box in zip(words[batch_idx], boxes[batch_idx]):
-				tokenized_word = self.tokenizer(word).input_ids[:-1]  # Tokenize the word and ignore eos_token
+				tokenized_word = self.tokenizer(word).input_ids[:-1] # Tokenize the word and ignore eos_token
 				input_ids.extend(tokenized_word)
 				input_boxes.extend([box]*len(tokenized_word))  # Repeat the box for each token corresponding to the word.
 
@@ -124,7 +134,8 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			pred_answers_conf = []
 
 			for batch_idx in range(bs):
-				input_embeds, attention_mask, _ = self.prepare_inputs_for_vqa([question[batch_idx]]*num_pages[batch_idx], words[batch_idx], boxes[batch_idx])  # Answers are not considered. Logits set-up is made only for inference.
+				# Answers are not considered. Logits set-up is made only for inference.
+				input_embeds, attention_mask, _ = self.prepare_inputs_for_vqa([question[batch_idx]]*num_pages[batch_idx], words[batch_idx], boxes[batch_idx], images[batch_idx])
 				pred_answer, logits = self.get_answer_from_model_output(input_embeds, attention_mask)
 				# input_text = ["question: {:s}  context: {:s}".format(q, c) for q, c in zip([question[batch_idx]]*len(context[batch_idx]), context[batch_idx])]
 				# tokens = self.tokenizer(input_text, return_tensors='pt', padding=True, truncation=True).to(self.model.device)

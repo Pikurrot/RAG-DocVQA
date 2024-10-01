@@ -1,5 +1,4 @@
 import ast
-import math
 import random
 from PIL import Image
 import os
@@ -8,7 +7,8 @@ import json
 import argparse
 import numpy as np
 import torch
-from collections import defaultdict
+from PIL import Image
+from typing import Literal, List, Tuple
 
 def parse_args():
 	parser = argparse.ArgumentParser(description="MP-DocVQA framework")
@@ -174,54 +174,52 @@ def time_stamp_to_hhmmss(timestamp, string=True):
 
 	return time
 
+def compute_grid(image_patches: List[Image.Image]) -> Tuple[int, int]:
+	# Sort image patches by height (or width) to make strip packing more efficient
+	image_patches = sorted(image_patches, key=lambda img: img.height, reverse=True)
+	total_area = sum(im.width * im.height for im in image_patches)
+	# Estimate optimal grid dimensions based on total area and aspect ratios
+	grid_width = max(im.width for im in image_patches)
+	grid_height = int(total_area / grid_width)
+	return grid_width, grid_height
 
-def compute_grid(num_pages):
-	rows = cols = math.ceil(math.sqrt(num_pages))
+def concatenate_patches(
+		image_patches: List[Image.Image],
+		mode: Literal["horizontal", "vertical", "grid"] = "grid"
+) -> Image:
+	widths, heights = zip(*(i.size for i in image_patches))
+	if mode == "horizontal":
+		total_width = sum(widths)
+		max_height = max(heights)
+		new_image = Image.new('RGB', (total_width, max_height))
+		x_offset = 0
+		for im in image_patches:
+			new_image.paste(im, (x_offset, 0))
+			x_offset += im.size[0]
+	elif mode == "vertical":
+		max_width = max(widths)
+		total_height = sum(heights)
+		new_image = Image.new('RGB', (max_width, total_height))
+		y_offset = 0
+		for im in image_patches:
+			new_image.paste(im, (0, y_offset))
+			y_offset += im.size[1]
+	elif mode == "grid":
+		grid_width, grid_height = compute_grid(image_patches)
+		new_image = Image.new("RGB", size=(grid_width, grid_height))
+		x_offset, y_offset = 0, 0
+		row_height = 0
+		# Place the images in rows (strip-packing style)
+		for img in image_patches:
+			if x_offset + img.width > grid_width:
+				# Move to the next row
+				x_offset = 0
+				y_offset += row_height
+				row_height = 0
+			new_image.paste(img, (x_offset, y_offset))
+			x_offset += img.width
+			row_height = max(row_height, img.height)
+	return new_image
 
-	if rows * (cols-1) >= num_pages:
-		cols = cols-1
-
-	return rows, cols
-
-
-def get_page_position_in_grid(page, cols):
-	page_row = math.floor(page/cols)
-	page_col = page % cols
-
-	return page_row, page_col
-
-
-def create_grid_image(images, boxes=None):
-	rows, cols = compute_grid(len(images))
-
-	# rescaling to min width [height padding]
-	min_width = min(im.width for im in images)
-	images = [
-		im.resize((min_width, int(im.height * min_width / im.width)), resample=Image.BICUBIC) for im in images
-	]
-
-	w, h = max([img.size[0] for img in images]), max([img.size[1] for img in images])
-	assert w == min_width
-	grid = Image.new("RGB", size=(cols * w, rows * h))
-
-	for i, img in enumerate(images):
-		grid.paste(img, box=(i % cols * w, i // cols * h))
-
-	# Squeeze bounding boxes to the dimension of a single grid.
-	for page_ix in range(len(boxes)):
-
-		if len(boxes[page_ix]) == 0:
-			continue
-
-		page_row, page_col = get_page_position_in_grid(page_ix, cols)
-		boxes[page_ix][:, [0, 2]] = boxes[page_ix][:, [0, 2]] / cols * (page_col+1)  # Resize width
-		boxes[page_ix][:, [1, 3]] = boxes[page_ix][:, [1, 3]] / rows * (page_row+1)  # Resize height
-
-	boxes = np.concatenate(boxes)
-	return grid, boxes
-
-def separate_context(context_str: str, context_idx: list):
-	doc_dict = defaultdict(list)
-	for char, doc_idx in zip(context_str, context_idx):
-		doc_dict[doc_idx].append(char)
-	return ["".join(chars) for chars in doc_dict.values()]
+def flatten(lst):
+	return [item for sublist in lst for item in sublist]

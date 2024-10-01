@@ -2,6 +2,7 @@ import torch
 from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config
 from src._model_utils import torch_no_grad, mean_pooling
+from src.utils import flatten, concatenate_patches
 from typing import Tuple
 from PIL import Image
 import numpy as np
@@ -201,9 +202,8 @@ class RAGVT5(torch.nn.Module):
 		# Retrieve top k chunks and corresponding image patches
 		_, _, top_k_patches, _, top_k_words_text, top_k_words_boxes = self.retrieve(batch, k=5, return_words=True)
 		new_batch = batch.copy()
-		new_batch["words"] = top_k_words_text
-		new_batch["boxes"] = top_k_words_boxes
-		new_batch["images"] = top_k_patches
+		new_batch["words"] = [flatten(batch) for batch in top_k_words_text] # (bs, k * n_words)
+		new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes] # (bs, k * n_words, 4)
+		new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches] # (bs, h, w, 3)
 		# Generate
 		return self.generator(new_batch, return_pred_answer=return_pred_answer)
-		

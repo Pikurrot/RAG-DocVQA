@@ -4,7 +4,7 @@ import torch
 from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneration
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
 from src._model_utils import shift_tokens_right, get_generative_confidence
-from typing import Any
+from typing import Any, Tuple, Optional
 
 class VT5ForConditionalGeneration(PreTrainedModel):
 	config_class = CustomT5Config
@@ -38,9 +38,19 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			words: list, # (bs, n_words)
 			boxes: list, # (bs, n_words, 4)
 			images: list, # (bs,) PIL images
-			answers: bool=None, # (bs, n_answers)
+			answers: Optional[list]=None, # (bs, n_answers)
 			return_ids: bool=False # 
-	):
+	) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+		"""
+		Prepare inputs for the model
+			:param question: list of questions
+			:param words: list of lists of words
+			:param boxes: list of lists of boxes
+			:param images: list of images
+			:param answers: list of lists of answers
+			:param return_ids: if True, return the input_ids instead of the embeddings
+			:return: input_embeds, attention_mask, labels
+		"""
 		bs = len(words)
 		prompt_text = ["question: {:s}  context: ".format(q) for q in question]
 		prompt_box = [0, 0, 1000, 1000]
@@ -65,7 +75,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			batch_input_boxes.append(np.concatenate([input_boxes[:self.max_source_length-1],  np.array([eos_box])]))  # Append a bounding box corresponding to the eos_token.
 			longest_seq = min(max(longest_seq, len(input_ids) + 1), self.max_source_length)
 
-		# Convert to tensors and pad. Actually, a pad tensor is created and it's filled with corresponding values.
+		# Convert to tensors and pad. Actually, a pad tensor is created and it"s filled with corresponding values.
 		tensor_input_ids = torch.full([bs, longest_seq], fill_value=self.tokenizer.pad_token_id, dtype=torch.long)
 		tensor_boxes = torch.full([bs, longest_seq, 4],  fill_value=padding_box_value, dtype=torch.long)
 		tensor_attention_mask = torch.zeros([bs, longest_seq], dtype=torch.long)
@@ -76,9 +86,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			tensor_attention_mask[batch_idx, :len(batch_input_ids[batch_idx])] = 1
 
 		"""
-		context = [(' ').join(doc_words) for doc_words in words]
+		context = [(" ").join(doc_words) for doc_words in words]
 		input_text = ["question: {:s}  context: {:s}".format(q, c) for q, c in zip(question, context)]
-		tokens = self.tokenizer(input_text, return_tensors='pt', padding=True, truncation=True).to(self.model.device)
+		tokens = self.tokenizer(input_text, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
 		input_embeds = self.model.shared(tokens.input_ids)
 		"""
 
@@ -98,16 +108,16 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		tensor_attention_mask = torch.cat([tensor_attention_mask, visual_emb_mask], dim=1)
 
 		"""
-		context = [' '.join(doc_words) for doc_words in words]
+		context = [" ".join(doc_words) for doc_words in words]
 		input_text = ["question: {:s}  context: {:s}".format(q, c) for q, c in zip(question, context)]
-		tokens = self.tokenizer(input_text, return_tensors='pt', padding=True, truncation=True).to(self.model.device)
+		tokens = self.tokenizer(input_text, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
 		x = self.model.shared(tokens.input_ids)
 		"""
 
 		# Tokenize answers
 		if answers is not None:
 			answers = [random.choice(answer) for answer in answers]
-			labels = self.tokenizer(answers, return_tensors='pt', padding=True)
+			labels = self.tokenizer(answers, return_tensors="pt", padding=True)
 			labels.input_ids[labels.input_ids[:] == self.tokenizer.pad_token_id] = -100
 			labels = labels.input_ids.to(self.language_backbone.device)
 		else:
@@ -118,16 +128,16 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		else:
 			return input_embeds, tensor_attention_mask, labels
 
-	def forward(self, batch, return_pred_answer=False):
-		question = batch['questions']
-		words = batch['words']
-		boxes = batch['boxes']
-		images = batch['images']
-		answers = batch.get('answers', None)
+	def forward(self, batch: dict, return_pred_answer: bool=False):
+		question = batch["questions"]
+		words = batch["words"]
+		boxes = batch["boxes"]
+		images = batch["images"]
+		answers = batch.get("answers", None)
 		bs = len(question)
 
-		if self.page_retrieval == 'logits':
-			num_pages = batch['num_pages']
+		if self.page_retrieval == "logits":
+			num_pages = batch["num_pages"]
 			outputs = []
 			pred_answers = []
 			pred_answer_pages = []
@@ -137,8 +147,6 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				# Answers are not considered. Logits set-up is made only for inference.
 				input_embeds, attention_mask, _ = self.prepare_inputs_for_vqa([question[batch_idx]]*num_pages[batch_idx], words[batch_idx], boxes[batch_idx], images[batch_idx])
 				pred_answer, logits = self.get_answer_from_model_output(input_embeds, attention_mask)
-				# input_text = ["question: {:s}  context: {:s}".format(q, c) for q, c in zip([question[batch_idx]]*len(context[batch_idx]), context[batch_idx])]
-				# tokens = self.tokenizer(input_text, return_tensors='pt', padding=True, truncation=True).to(self.model.device)
 
 				max_logits = -999999
 				answer_page = None
@@ -149,7 +157,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 						answer_page = page_ix
 						best_answer = pred_answer[page_ix]
 
-				outputs.append(None)  # outputs.append(document_outputs)  # During inference outputs are not used.
+				outputs.append(None) # During inference outputs are not used.
 				pred_answers.append(best_answer)
 				pred_answer_pages.append(answer_page)
 				pred_answers_conf.append(max_logits)
@@ -177,15 +185,19 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				outputs = None
 				pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
 
-			if self.page_retrieval == 'oracle':
-				pred_answer_pages = batch['answer_page_idx']
+			if self.page_retrieval == "oracle":
+				pred_answer_pages = batch["answer_page_idx"]
 
-			elif self.page_retrieval == 'concat':
+			elif self.page_retrieval == "concat":
 				pred_answer_pages = None
 
 		return outputs, pred_answers, pred_answer_pages, pred_answers_conf
 
-	def get_answer_from_model_output(self, input_embeds, attention_mask):
+	def get_answer_from_model_output(
+			self,
+			input_embeds: torch.Tensor,
+			attention_mask: torch.Tensor
+	) -> Tuple[list, list]:
 		output = self.language_backbone.generate(
 			inputs_embeds=input_embeds,
 			attention_mask=attention_mask,
@@ -194,7 +206,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			output_attentions=True,
 			max_new_tokens=100,
 		)
-		pred_answers = self.tokenizer.batch_decode(output['sequences'], skip_special_tokens=True)
+		pred_answers = self.tokenizer.batch_decode(output["sequences"], skip_special_tokens=True)
 		pred_answers_conf = get_generative_confidence(output)
 
 		return pred_answers, pred_answers_conf

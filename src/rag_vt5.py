@@ -3,15 +3,12 @@ from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config
 from src._model_utils import torch_no_grad, mean_pooling
 from src.utils import flatten, concatenate_patches
-from typing import Tuple
+from typing import Tuple, Any
 from PIL import Image
 import numpy as np
 
 class RAGVT5(torch.nn.Module):
-	def __init__(
-			self,
-			config: dict,
-	):
+	def __init__(self, config: dict):
 		super(RAGVT5, self).__init__()
 
 		# Load config
@@ -31,7 +28,7 @@ class RAGVT5(torch.nn.Module):
 		)
 		self.generator.load_config(config)
 
-	def to(self, device):
+	def to(self, device: Any):
 		self.device = device
 		self.generator.to(device)
 
@@ -136,7 +133,7 @@ class RAGVT5(torch.nn.Module):
 		for text_batch in text_chunks:
 			input_ids, attention_mask = self.generator.tokenizer(
 				text_batch,
-				return_tensors='pt',
+				return_tensors="pt",
 				padding=True,
 				truncation=True
 			).values()
@@ -147,7 +144,7 @@ class RAGVT5(torch.nn.Module):
 		# Get question embeddings
 		input_ids, attention_mask = self.generator.tokenizer(
 			questions,
-			return_tensors='pt',
+			return_tensors="pt",
 			padding=True,
 			truncation=True
 		).values()
@@ -198,7 +195,7 @@ class RAGVT5(torch.nn.Module):
 		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes
 			
 
-	def forward(self, batch: dict, return_pred_answer: bool=True):
+	def forward(self, batch: dict, return_pred_answer: bool=True) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		_, _, top_k_patches, _, top_k_words_text, top_k_words_boxes = self.retrieve(batch, k=5, return_words=True)
 		new_batch = batch.copy()

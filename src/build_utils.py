@@ -2,9 +2,13 @@ import transformers
 from src.rag_vt5 import RAGVT5
 from src.MP_DocVQA import MPDocVQA
 from transformers import get_scheduler
+from typing import Any
 
-
-def build_optimizer(model, length_train_loader, config):
+def build_optimizer(
+		model: Any,
+		length_train_loader: int,
+		config: dict
+):
 	optimizer_class = getattr(transformers, "AdamW")
 	optimizer = optimizer_class(model.model.parameters(), lr=float(config["lr"]))
 	num_training_steps = config["train_epochs"] * length_train_loader
@@ -13,12 +17,10 @@ def build_optimizer(model, length_train_loader, config):
 	)
 	return optimizer, lr_scheduler
 
-
-def build_model(config):
+def build_model(config: dict) -> RAGVT5:
 	model = RAGVT5(config)
 	model.to(model.device)
 	return model
-
 
 def build_dataset(config, split):
 	dataset_kwargs = {

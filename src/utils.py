@@ -7,10 +7,9 @@ import json
 import argparse
 import numpy as np
 import torch
-from PIL import Image
-from typing import Literal, List, Tuple
+from typing import Literal, Tuple, List
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="MP-DocVQA framework")
 
 	# Required
@@ -32,8 +31,7 @@ def parse_args():
 	parser.add_argument("--no-data-parallel", action="store_false", dest="data_parallel", help="Boolean to overwrite data-parallel arg in config to indicate to parallelize the execution.")
 	return parser.parse_args()
 
-
-def parse_multitype2list_arg(argument):
+def parse_multitype2list_arg(argument: str) -> list:
 	if argument is None:
 		return argument
 
@@ -52,27 +50,15 @@ def parse_multitype2list_arg(argument):
 
 	return argument
 
-
-def save_json(path, data):
+def save_json(path: str, data: dict):
 	with open(path, "w+") as f:
 		json.dump(data, f)
 
-
-def save_yaml(path, data):
+def save_yaml(path: str, data: dict):
 	with open(path, "w+") as f:
 		yaml.dump(data, f)
 
-
-"""
-def seed_everything(seed):
-	random.seed(seed)
-	np.random.seed(seed)
-	torch.manual_seed(seed)
-	torch.cuda.manual_seed(seed)
-"""
-
-
-def seed_everything(seed):
+def seed_everything(seed: int):
 	random.seed(seed)
 	os.environ["PYTHONHASHSEED"] = str(seed)
 	np.random.seed(seed)
@@ -81,8 +67,7 @@ def seed_everything(seed):
 	torch.backends.cudnn.deterministic = True
 	torch.backends.cudnn.benchmark = True
 
-
-def check_config(config):
+def check_config(config: dict) -> bool:
 	model_name = config["model_name"].lower()
 
 	if "page_retrieval" not in config:
@@ -113,8 +98,7 @@ def check_config(config):
 
 	return True
 
-
-def load_config(args):
+def load_config(args: argparse.Namespace) -> dict:
 	model_config_path = "configs/{:}.yml".format(args.model)
 	dataset_config_path = "configs/{:}.yml".format(args.dataset)
 	model_config = parse_config(yaml.safe_load(open(model_config_path, "r")), args)
@@ -140,16 +124,13 @@ def load_config(args):
 
 	return config
 
-
-def parse_config(config, args):
+def parse_config(config: dict, args: argparse.Namespace) -> dict:
 	# Import included configs.
 	for included_config_path in config.get("includes", []):
 		config = load_config(included_config_path, args) | config
-
 	return config
 
-
-def correct_alignment(context, answer, start_idx, end_idx):
+def correct_alignment(context: str, answer: str, start_idx: int, end_idx: int) -> Tuple[int, int]:
 
 	if context[start_idx: end_idx] == answer:
 		return [start_idx, end_idx]
@@ -164,8 +145,7 @@ def correct_alignment(context, answer, start_idx, end_idx):
 		print(context[start_idx: end_idx], answer)
 		return None
 
-
-def time_stamp_to_hhmmss(timestamp, string=True):
+def time_stamp_to_hhmmss(timestamp: int, string: bool=True) -> str:
 	hh = int(timestamp/3600)
 	mm = int((timestamp-hh*3600)/60)
 	ss = int(timestamp - hh*3600 - mm*60)
@@ -186,25 +166,28 @@ def compute_grid(image_patches: List[Image.Image]) -> Tuple[int, int]:
 def concatenate_patches(
 		image_patches: List[Image.Image],
 		mode: Literal["horizontal", "vertical", "grid"] = "grid"
-) -> Image:
+) -> Image.Image:
 	widths, heights = zip(*(i.size for i in image_patches))
 	if mode == "horizontal":
+		# Concatenate images horizontally
 		total_width = sum(widths)
 		max_height = max(heights)
-		new_image = Image.new('RGB', (total_width, max_height))
+		new_image = Image.new("RGB", (total_width, max_height))
 		x_offset = 0
 		for im in image_patches:
 			new_image.paste(im, (x_offset, 0))
 			x_offset += im.size[0]
 	elif mode == "vertical":
+		# Concatenate images vertically
 		max_width = max(widths)
 		total_height = sum(heights)
-		new_image = Image.new('RGB', (max_width, total_height))
+		new_image = Image.new("RGB", (max_width, total_height))
 		y_offset = 0
 		for im in image_patches:
 			new_image.paste(im, (0, y_offset))
 			y_offset += im.size[1]
 	elif mode == "grid":
+		# Concatenate images in a compact grid layout
 		grid_width, grid_height = compute_grid(image_patches)
 		new_image = Image.new("RGB", size=(grid_width, grid_height))
 		x_offset, y_offset = 0, 0
@@ -221,5 +204,5 @@ def concatenate_patches(
 			row_height = max(row_height, img.height)
 	return new_image
 
-def flatten(lst):
+def flatten(lst: List[list]) -> list:
 	return [item for sublist in lst for item in sublist]

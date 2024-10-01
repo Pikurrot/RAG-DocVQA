@@ -1,5 +1,5 @@
 import transformers
-from src.rag_vt5 import RAGVT5
+from RAG_VT5 import RAGVT5
 from src.MP_DocVQA import MPDocVQA
 from transformers import get_scheduler
 from typing import Any

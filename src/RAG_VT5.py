@@ -182,7 +182,7 @@ class RAGVT5(torch.nn.Module):
 			batch_patches = []
 			for i, page_idx in enumerate(top_k_page_indices[b]):
 				page: Image.Image = images[b][page_idx] # (H, W, 3)
-				box: np.ndarray = top_k_boxes[b][i] # (4,)
+				box: np.ndarray = top_k_boxes[b][i].copy() # (4,)
 				# transform to absolute coordinates
 				box[0] = int(box[0] * page.width)
 				box[1] = int(box[1] * page.height)

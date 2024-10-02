@@ -193,14 +193,42 @@ class RAGVT5(torch.nn.Module):
 			top_k_patches.append(batch_patches)
 
 		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes
-			
 
-	def forward(self, batch: dict, return_pred_answer: bool=True) -> tuple:
+	def forward(
+			self,
+			batch: dict,
+			return_pred_answer: bool=True,
+			return_retrieval: bool=False
+	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
-		_, _, top_k_patches, _, top_k_words_text, top_k_words_boxes = self.retrieve(batch, k=5, return_words=True)
+		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes =\
+			self.retrieve(batch, k=5, return_words=True)
 		new_batch = batch.copy()
 		new_batch["words"] = [flatten(batch) for batch in top_k_words_text] # (bs, k * n_words)
 		new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes] # (bs, k * n_words, 4)
 		new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches] # (bs, h, w, 3)
 		# Generate
-		return self.generator(new_batch, return_pred_answer=return_pred_answer)
+		result = self.generator(new_batch, return_pred_answer=return_pred_answer)
+		if return_retrieval:
+			retrieval = {
+				"text": top_k_text,
+				"boxes": top_k_boxes,
+				"patches": top_k_patches,
+				"page_indices": top_k_page_indices,
+				"words_text": top_k_words_text,
+				"words_boxes": top_k_words_boxes,
+				"input_words": new_batch["words"],
+				"input_boxes": new_batch["boxes"],
+				"input_patches": new_batch["images"]
+			}
+			return *result, retrieval
+		else:
+			return result
+
+	@torch_no_grad
+	def inference(
+			self,
+			batch: dict,
+			return_retrieval: bool=False
+	):
+		return self.forward(batch, return_retrieval=return_retrieval)

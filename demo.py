@@ -88,7 +88,8 @@ if __name__ == "__main__":
     print("Starting...")
     args = {
         "model": "VT5",
-        "dataset": "MP-DocVQA"
+        "dataset": "MP-DocVQA",
+        "embed_model": "BGE"
     }
     args = argparse.Namespace(**args)
     config = load_config(args)

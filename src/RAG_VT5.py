@@ -1,9 +1,10 @@
 import torch
+from transformers import AutoTokenizer, AutoModel
 from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config
 from src._model_utils import torch_no_grad, mean_pooling
 from src.utils import flatten, concatenate_patches
-from typing import Tuple, Any
+from typing import Tuple, Any, List
 from PIL import Image
 import numpy as np
 
@@ -18,6 +19,7 @@ class RAGVT5(torch.nn.Module):
 		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
+		self.embed_model = config.get("embed_model", "VT5")
 
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True)
 		t5_config.visual_module_config = config.get("visual_module", {})
@@ -27,16 +29,56 @@ class RAGVT5(torch.nn.Module):
 			self.model_path, config=t5_config, ignore_mismatched_sizes=True
 		)
 		self.generator.load_config(config)
+		if self.embed_model == "BGE":
+			self.bge_tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5')
+			self.bge_model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
+			self.bge_model.eval()
 
 	def to(self, device: Any):
 		self.device = device
 		self.generator.to(device)
+		if self.embed_model == "BGE":
+			self.bge_model.to(device)
 
 	def eval(self):
 		self.generator.eval()
 
 	def train(self):
 		self.generator.train()
+
+	@torch_no_grad
+	def embed(self, text: List[str]) -> torch.Tensor:
+		if self.embed_model == "VT5":
+			input_ids, attention_mask = self.generator.tokenizer(
+				text,
+				return_tensors="pt",
+				padding=True,
+				truncation=True
+			).values()
+			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
+			text_tokens_embeddings = self.generator.language_backbone.shared(input_ids)
+			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
+		elif self.embed_model == "BGE":
+			encoded_input = self.bge_tokenizer(
+				text,
+				return_tensors="pt",
+				padding=True,
+				truncation=True
+			)
+			encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
+			text_tokens_embeddings = self.bge_model(**encoded_input)[0][:,0]
+			text_embeddings = torch.nn.functional.normalize(text_tokens_embeddings, p=2, dim=-1)
+		return text_embeddings
+
+	def get_similarities(
+			self,
+			text_embeddings: torch.Tensor, # (bs, n_chunks, hidden_size)
+			question_embeddings: torch.Tensor # (bs, hidden_size)
+	) -> torch.Tensor: # (bs, n_chunks)
+		norms_text = torch.norm(text_embeddings, dim=-1)
+		norms_quest = torch.norm(question_embeddings, dim=-1)
+		similarity = torch.matmul(text_embeddings, question_embeddings.unsqueeze(-1)).squeeze(-1) / (norms_text * norms_quest)
+		return similarity
 
 	def get_chunks(
 			self,
@@ -131,34 +173,14 @@ class RAGVT5(torch.nn.Module):
 		# Get text embeddings
 		text_embeddings = [] # (bs, n_chunks, hidden_size)
 		for text_batch in text_chunks:
-			input_ids, attention_mask = self.generator.tokenizer(
-				text_batch,
-				return_tensors="pt",
-				padding=True,
-				truncation=True
-			).values()
-			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
-			text_tokens_embeddings = self.generator.language_backbone.shared(input_ids)
-			text_embeddings.append(mean_pooling(text_tokens_embeddings, attention_mask))
+			text_embeddings.append(self.embed(text_batch))
+		text_embeddings = torch.stack(text_embeddings)
 
 		# Get question embeddings
-		input_ids, attention_mask = self.generator.tokenizer(
-			questions,
-			return_tensors="pt",
-			padding=True,
-			truncation=True
-		).values()
-		input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
-		question_tokens_embeddings = self.generator.language_backbone.shared(input_ids)
-		question_embeddings = mean_pooling(question_tokens_embeddings, attention_mask) # (bs, hidden_size)
+		question_embeddings = self.embed(questions) # (bs, hidden_size)
 
 		# Compute similarity
-		similarities = [] # (bs, n_chunks)
-		norms_quest = torch.norm(question_embeddings, dim=-1)
-		for b in range(bs):
-			batch_norms_text = torch.norm(text_embeddings[b], dim=-1)
-			similarity = torch.matmul(text_embeddings[b], question_embeddings[b]) / (batch_norms_text * norms_quest[b])
-			similarities.append(similarity)
+		similarities = self.get_similarities(text_embeddings, question_embeddings)
 
 		# Get top k chunks and boxes
 		top_k_text = [] # (bs, k)

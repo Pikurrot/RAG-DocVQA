@@ -4,7 +4,6 @@ from PIL import Image
 import numpy as np
 from typing import Literal, Any, List, Tuple, Dict
 from torch.utils.data import Dataset
-from src.utils import concatenate_patches
 
 class MPDocVQA(Dataset):
 
@@ -29,7 +28,6 @@ class MPDocVQA(Dataset):
 		self.use_images = kwargs.get("use_images", False)
 		self.get_raw_ocr_data = kwargs.get("get_raw_ocr_data", False)
 		self.max_pages = kwargs.get("max_pages", 1)
-		self.get_doc_id = False
 
 	def __len__(self):
 		return len(self.imdb)
@@ -62,117 +60,33 @@ class MPDocVQA(Dataset):
 		answer_page_idx = record["answer_page_idx"]
 		num_pages = record["imdb_doc_pages"]
 
-		if self.page_retrieval == "oracle":
-			context = " ".join([word.lower() for word in record["ocr_tokens"][answer_page_idx]])
-			context_page_corresp = None
-			num_pages = 1
+		context = []
+		for page_ix in range(record["imdb_doc_pages"]):
+			context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))
 
-			if self.use_images:
-				image_names = os.path.join(self.images_dir, "{:s}.jpg".format(record["image_name"][answer_page_idx]))
-				images = Image.open(image_names).convert("RGB")
+		context_page_corresp = None
 
-			if self.get_raw_ocr_data:
-				words = [word.lower() for word in record["ocr_tokens"][answer_page_idx]]
-				boxes = np.array([bbox for bbox in record["ocr_normalized_boxes"][answer_page_idx]])
+		if self.use_images:
+			image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
+			images = [Image.open(img_path).convert("RGB") for img_path in image_names]
 
-		elif self.page_retrieval == "concat":
-			context = ""
-			context_page_corresp = []
-			for page_ix in range(record["imdb_doc_pages"]):
-				page_context = " ".join([word.lower() for word in record["ocr_tokens"][page_ix]])
-				context += " " + page_context
-				context_page_corresp.extend([-1] + [page_ix]*len(page_context))
-
-			context = context.strip()
-			context_page_corresp = context_page_corresp[1:]  # Remove the first character corresponding to the first space.
-
-			if self.get_raw_ocr_data:
-				words = []
-				for p in range(num_pages):
-					words.extend([word.lower() for word in record["ocr_tokens"][p]])
-
-					"""
-					mod_boxes = record["ocr_normalized_boxes"][p]
-					mod_boxes[:, 1] = mod_boxes[:, 1]/num_pages + p/num_pages
-					mod_boxes[:, 3] = mod_boxes[:, 3]/num_pages + p/num_pages
-
-					boxes.extend(mod_boxes)  # bbox in l,t,r,b
-					"""
-				# boxes = np.array(boxes)
-				boxes = record["ocr_normalized_boxes"]
-
-			else:
-				words, boxes = None, None
-
-			if self.use_images:
-				image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
-				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
-				images, boxes = concatenate_patches(images, boxes)
-
-			else:
-				boxes = np.array(boxes)
-
-		elif self.page_retrieval == "logits":
-			context = []
-			for page_ix in range(record["imdb_doc_pages"]):
-				context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))
-
-			context_page_corresp = None
-
-			if self.use_images:
-				image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
-				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
-
-			if self.get_raw_ocr_data:
-				words = []
-				boxes = record["ocr_normalized_boxes"]
-				for p in range(num_pages):
-					words.append([word.lower() for word in record["ocr_tokens"][p]])
-
-		elif self.page_retrieval == "custom":
-			first_page, last_page = self.get_pages(record)
-			answer_page_idx = answer_page_idx - first_page
-			num_pages = len(range(first_page, last_page))
-
+		if self.get_raw_ocr_data:
 			words = []
-			boxes = []
-			context = []
-			image_names = []
+			boxes = record["ocr_normalized_boxes"]
+			for p in range(num_pages):
+				words.append([word.lower() for word in record["ocr_tokens"][p]])
+		
+		start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
 
-			for page_ix in range(first_page, last_page):
-				words.append([word.lower() for word in record["ocr_tokens"][page_ix]])
-				boxes.append(np.array(record["ocr_normalized_boxes"][page_ix], dtype=np.float32))
-				context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))
-				image_names.append(os.path.join(self.images_dir, "{:s}.jpg".format(record["image_name"][page_ix])))
-
-			context_page_corresp = None
-
-			if num_pages < self.max_pages:
-				for _ in range(self.max_pages - num_pages):
-					words.append([""])
-					boxes.append(np.zeros([1, 4], dtype=np.float32))
-
-			if self.use_images:
-				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
-				images += [Image.new("RGB", (2, 2)) for i in range(self.max_pages - len(image_names))]  # Pad with 2x2 images.
-
-		if self.page_retrieval in ["oracle", "concat", "none"]:
-			start_idxs, end_idxs = self._get_start_end_idx(context, answers)
-
-		elif self.page_retrieval == "logits":
-			start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
-
-		else:
-			start_idxs, end_idxs = None, None
-
-		sample_info = {"question_id": record["question_id"],
-					   "questions": question,
-					   "contexts": context,
-					   "context_page_corresp": context_page_corresp,
-					   "answers": answers,
-					   "answer_page_idx": answer_page_idx,
-					   "num_pages": num_pages
-					   }
+		sample_info = {
+			"question_id": record["question_id"],
+			"questions": question,
+			"contexts": context,
+			"context_page_corresp": context_page_corresp,
+			"answers": answers,
+			"answer_page_idx": answer_page_idx,
+			"num_pages": num_pages
+		}
 
 		if self.use_images:
 			sample_info["image_names"] = image_names
@@ -181,13 +95,9 @@ class MPDocVQA(Dataset):
 		if self.get_raw_ocr_data:
 			sample_info["words"] = words
 			sample_info["boxes"] = boxes
-
 		else:  # Information for extractive models
 			sample_info["start_indxs"] = start_idxs
 			sample_info["end_indxs"] = end_idxs
-
-		if self.get_doc_id:
-			sample_info["doc_id"] = [record["image_name"][page_ix] for page_ix in range(first_page, last_page)]
 
 		return sample_info
 

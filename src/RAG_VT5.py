@@ -195,10 +195,12 @@ class RAGVT5(torch.nn.Module):
 			k_min = min(k, len(similarities[b]))
 			top_k = torch.topk(similarities[b], k=k_min, dim=-1).indices
 
+			# these do not contain surrounding words, just the retrieved chunks
 			top_k_text.append([text_chunks[b][i] for i in top_k])
 			top_k_boxes.append([box_chunks[b][i] for i in top_k])
 			top_k_page_indices.append([page_indices[b][i] for i in top_k])
 
+			# If return words (for generator), also include surrounding words
 			if return_words:
 				# Build per-page word lists and mappings
 				page_words_text = {}             # page_idx -> list of all words on that page
@@ -265,7 +267,6 @@ class RAGVT5(torch.nn.Module):
 				top_k_words_text.append(batch_top_k_words_text)
 				top_k_words_boxes.append(batch_top_k_words_boxes)
 
-
 		# Get image patches
 		top_k_patches = [] # (bs, k, h, w, 3)
 		for b in range(bs):
@@ -287,20 +288,65 @@ class RAGVT5(torch.nn.Module):
 	def forward(
 			self,
 			batch: dict,
-			return_pred_answer: bool=True,
-			return_retrieval: bool=False,
-			include_surroundings: int=0
+			return_pred_answer: bool = True,
+			return_retrieval: bool = False,
+			include_surroundings: int = 0,
+			k: int = 5
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
-		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes =\
-			self.retrieve(batch, k=5, return_words=True, include_surroundings=include_surroundings)
-		new_batch = batch.copy()
-		new_batch["words"] = [flatten(batch) for batch in top_k_words_text] # (bs, k * n_words)
-		new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes] # (bs, k * n_words, 4)
-		new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches] # (bs, h, w, 3)
+		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes = \
+			self.retrieve(batch, k=k, return_words=True, include_surroundings=include_surroundings)
+		bs = len(top_k_text)
 		# Generate
-		result = self.generator(new_batch, return_pred_answer=return_pred_answer)
+		if self.page_retrieval == "concat":
+			new_batch = batch.copy()
+			# Concatenate all the top k chunks
+			new_batch["words"] = [flatten(batch) for batch in top_k_words_text]  # (bs, k * n_words)
+			new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes]  # (bs, k * n_words, 4)
+			new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches]  # (bs, h, w, 3)
+			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
+		elif self.page_retrieval == "logits":
+			# Generate for each top k chunk and take the answer with highest confidence
+			results = []  # (bs, 4, k)
+			max_confidence_indices = []
+			for b in range(bs):  # iterate over batch
+				words, boxes, patches = [], [], []
+				for i in range(len(top_k_words_text[b])):
+					if top_k_words_text[b][i] != []:
+						words.append(top_k_words_text[b][i])
+						boxes.append(top_k_words_boxes[b][i])
+						patches.append(top_k_patches[b][i])
+				if len(words) == 0:
+					# If there are no words, append None and continue
+					results.append(None)
+					max_confidence_indices.append(None)
+					continue
+				new_batch = {}
+				new_batch["questions"] = [batch["questions"][b]] * len(words)  # (k,)
+				new_batch["words"] = words  # (k, n_words)
+				new_batch["boxes"] = boxes  # (k, n_words, 4)
+				new_batch["images"] = patches  # (k, h, w, 3)
+				# This treats k as batch size
+				result = self.generator(new_batch, return_pred_answer=return_pred_answer)
+				results.append(result)
+				# Get confidence scores
+				confidences = torch.tensor(result[3])  # (k,)
+				max_confidence_index = torch.argmax(confidences).item()
+				max_confidence_indices.append(max_confidence_index)
+			# Get the answer with highest confidence
+			final_results = [[] for _ in range(4)]  # [[], [], [], []]
+			for b in range(bs):
+				result = results[b]
+				conf_idx = max_confidence_indices[b]
+				for i in range(4):
+					if result[i] is not None:
+						final_results[i].append(result[i][conf_idx])
+					else:
+						final_results[i].append(None)
+			result = tuple(final_results)
+
 		if return_retrieval:
+			# For visualization
 			retrieval = {
 				"text": top_k_text,
 				"boxes": top_k_boxes,
@@ -308,10 +354,20 @@ class RAGVT5(torch.nn.Module):
 				"page_indices": top_k_page_indices,
 				"words_text": top_k_words_text,
 				"words_boxes": top_k_words_boxes,
-				"input_words": new_batch["words"],
-				"input_boxes": new_batch["boxes"],
-				"input_patches": new_batch["images"]
 			}
+			if self.page_retrieval == "concat":
+				retrieval.update({
+					"input_words": new_batch["words"],
+					"input_boxes": new_batch["boxes"],
+					"input_patches": new_batch["images"]
+				})
+			elif self.page_retrieval == "logits":
+				retrieval.update({
+					"max_confidence_indices": max_confidence_indices,
+					"input_words": [flatten(batch) for batch in top_k_words_text],
+					"input_boxes": [flatten(batch) for batch in top_k_words_boxes],
+					"input_patches": [concatenate_patches(batch, mode="grid") for batch in top_k_patches]
+				})
 			return *result, retrieval
 		else:
 			return result
@@ -321,6 +377,7 @@ class RAGVT5(torch.nn.Module):
 			self,
 			batch: dict,
 			return_retrieval: bool=False,
-			include_surroundings: int=0
+			include_surroundings: int=0,
+			k: int=5
 	):
-		return self.forward(batch, return_retrieval=return_retrieval, include_surroundings=include_surroundings)
+		return self.forward(batch, return_retrieval=return_retrieval, include_surroundings=include_surroundings, k=k)

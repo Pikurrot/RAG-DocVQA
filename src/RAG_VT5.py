@@ -145,7 +145,8 @@ class RAGVT5(torch.nn.Module):
 			k: int = 5,
 			chunk_size: int = 30,
 			overlap: int = 0,
-			return_words: bool = False
+			return_words: bool = False,
+			include_surroundings: int = 0
 	) -> Tuple[list, list, list, list, list, list]: # (bs, k), (bs, k, 4), (bs, k), (bs, k, h, w, 3),
 													# (bs, k, n_words), (bs, k, n_words, 4)
 		"""
@@ -155,6 +156,7 @@ class RAGVT5(torch.nn.Module):
 			:param chunk_size: size of the chunk in words
 			:param overlap: overlap of words between chunks
 			:param return_words: if True, return also the ocr and boxes for individual words
+			:param include_surroundings: number of words to include before and after each chunk
 			:return: top k chunks, top k boxes, top k image patches, top k page indices,
 					top k words text chunks, top k words box chunks
 		"""
@@ -183,20 +185,86 @@ class RAGVT5(torch.nn.Module):
 		similarities = self.get_similarities(text_embeddings, question_embeddings)
 
 		# Get top k chunks and boxes
-		top_k_text = [] # (bs, k)
-		top_k_boxes = [] # (bs, k, 4)
-		top_k_page_indices = [] # (bs, k)
-		top_k_words_text = [] # (bs, k, n_words)
-		top_k_words_boxes = [] # (bs, k, n_words, 4)
+		top_k_text = []  # (bs, k)
+		top_k_boxes = []  # (bs, k, 4)
+		top_k_page_indices = []  # (bs, k)
+		top_k_words_text = []  # (bs, k, n_words)
+		top_k_words_boxes = []  # (bs, k, n_words, 4)
+
 		for b in range(bs):
 			k_min = min(k, len(similarities[b]))
 			top_k = torch.topk(similarities[b], k=k_min, dim=-1).indices
+
 			top_k_text.append([text_chunks[b][i] for i in top_k])
 			top_k_boxes.append([box_chunks[b][i] for i in top_k])
 			top_k_page_indices.append([page_indices[b][i] for i in top_k])
+
 			if return_words:
-				top_k_words_text.append([words_text_chunks[b][i] for i in top_k])
-				top_k_words_boxes.append([words_box_chunks[b][i] for i in top_k])
+				# Build per-page word lists and mappings
+				page_words_text = {}             # page_idx -> list of all words on that page
+				page_words_boxes = {}            # page_idx -> list of all boxes on that page
+				chunk_word_positions = {}        # page_idx -> {chunk_idx: (start_pos, end_pos)}
+				included_word_indices = {}       # page_idx -> set of word indices already included
+
+				total_chunks = len(text_chunks[b])
+
+				# Build word lists and chunk positions per page
+				for i in range(total_chunks):
+					page_idx = page_indices[b][i]
+					if page_idx not in page_words_text:
+						page_words_text[page_idx] = []
+						page_words_boxes[page_idx] = []
+						chunk_word_positions[page_idx] = {}
+						included_word_indices[page_idx] = set()
+
+					words_in_chunk = words_text_chunks[b][i]
+					boxes_in_chunk = words_box_chunks[b][i]
+					num_words_in_chunk = len(words_in_chunk)
+
+					# Record the start and end positions of the chunk in the page word list
+					start_pos = len(page_words_text[page_idx])
+					end_pos = start_pos + num_words_in_chunk
+
+					page_words_text[page_idx].extend(words_in_chunk)
+					page_words_boxes[page_idx].extend(boxes_in_chunk)
+					chunk_word_positions[page_idx][i] = (start_pos, end_pos)
+
+				# Collect words with surroundings for each top-k chunk
+				batch_top_k_words_text = []
+				batch_top_k_words_boxes = []
+
+				for i in top_k:
+					i = i.item()
+					page_idx = page_indices[b][i]
+					(start_pos, end_pos) = chunk_word_positions[page_idx][i]
+
+					# Determine the range of word indices to include
+					surround_start = max(0, start_pos - include_surroundings)
+					surround_end = min(len(page_words_text[page_idx]), end_pos + include_surroundings)
+
+					# Collect word indices in the specified range
+					word_indices = range(surround_start, surround_end)
+
+					# Exclude word indices already included
+					new_word_indices = [
+						idx for idx in word_indices if idx not in included_word_indices[page_idx]
+					]
+
+					# Update included word indices
+					included_word_indices[page_idx].update(new_word_indices)
+
+					# Collect words and boxes
+					words_text = [page_words_text[page_idx][idx] for idx in new_word_indices]
+					words_boxes = [page_words_boxes[page_idx][idx] for idx in new_word_indices]
+
+					# Append to batch results
+					batch_top_k_words_text.append(words_text)
+					batch_top_k_words_boxes.append(words_boxes)
+
+				# Append batch data to the final results
+				top_k_words_text.append(batch_top_k_words_text)
+				top_k_words_boxes.append(batch_top_k_words_boxes)
+
 
 		# Get image patches
 		top_k_patches = [] # (bs, k, h, w, 3)
@@ -220,11 +288,12 @@ class RAGVT5(torch.nn.Module):
 			self,
 			batch: dict,
 			return_pred_answer: bool=True,
-			return_retrieval: bool=False
+			return_retrieval: bool=False,
+			include_surroundings: int=0
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes =\
-			self.retrieve(batch, k=5, return_words=True)
+			self.retrieve(batch, k=5, return_words=True, include_surroundings=include_surroundings)
 		new_batch = batch.copy()
 		new_batch["words"] = [flatten(batch) for batch in top_k_words_text] # (bs, k * n_words)
 		new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes] # (bs, k * n_words, 4)
@@ -251,6 +320,7 @@ class RAGVT5(torch.nn.Module):
 	def inference(
 			self,
 			batch: dict,
-			return_retrieval: bool=False
+			return_retrieval: bool=False,
+			include_surroundings: int=0
 	):
-		return self.forward(batch, return_retrieval=return_retrieval)
+		return self.forward(batch, return_retrieval=return_retrieval, include_surroundings=include_surroundings)

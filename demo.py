@@ -17,7 +17,8 @@ def process_next_batch():
         batch = next(batch_generator)
         
         # Inference using the model
-        outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = model.inference(batch, return_retrieval=True)
+        outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = \
+            model.inference(batch, return_retrieval=True, include_surroundings=10)
         
         # Prepare original information
         original_images = batch["images"][0]  # List of PIL images
@@ -30,8 +31,8 @@ def process_next_batch():
 
         # Prepare retrieved information
         retrieved_patches = retrieval["patches"][0]  # List of PIL images
-        retrieved_text_list = retrieval["text"][0]  # List of strings
-        retrieved_text = "\n".join(retrieved_text_list)
+        retrieved_text_list = retrieval["input_words"][0]  # List of strings
+        retrieved_text = " ".join(retrieved_text_list)
         retrieved_page_indices_list = retrieval["page_indices"][0]  # List of integers
         retrieved_page_indices = ", ".join(map(str, retrieved_page_indices_list))
 
@@ -89,7 +90,7 @@ if __name__ == "__main__":
     args = {
         "model": "VT5",
         "dataset": "MP-DocVQA",
-        "embed_model": "BGE"
+        "embed_model": "BGE" # VT5 or BGE
     }
     args = argparse.Namespace(**args)
     config = load_config(args)

@@ -23,8 +23,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.save_dir = config.get("save_dir", "save/")
 		self.batch_size = config.get("batch_size", 16)
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
-		# self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
-		self.page_retrieval = "concat"
+		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)
 
 	def to(self, device: Any):
@@ -134,62 +133,30 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		boxes = batch["boxes"]
 		images = batch["images"]
 		answers = batch.get("answers", None)
-		bs = len(question)
 
-		if self.page_retrieval == "logits":
-			num_pages = batch["num_pages"]
-			outputs = []
-			pred_answers = []
-			pred_answer_pages = []
-			pred_answers_conf = []
-
-			for batch_idx in range(bs):
-				# Answers are not considered. Logits set-up is made only for inference.
-				input_embeds, attention_mask, _ = self.prepare_inputs_for_vqa([question[batch_idx]]*num_pages[batch_idx], words[batch_idx], boxes[batch_idx], images[batch_idx])
-				pred_answer, logits = self.get_answer_from_model_output(input_embeds, attention_mask)
-
-				max_logits = -999999
-				answer_page = None
-				best_answer = None
-				for page_ix in range(len(input_embeds)):
-					if logits[page_ix] > max_logits:
-						max_logits = logits[page_ix]
-						answer_page = page_ix
-						best_answer = pred_answer[page_ix]
-
-				outputs.append(None) # During inference outputs are not used.
-				pred_answers.append(best_answer)
-				pred_answer_pages.append(answer_page)
-				pred_answers_conf.append(max_logits)
-
-		else:
-			input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, images, answers)
-			if labels is not None:
-				decoder_input_ids = shift_tokens_right(
-					labels,
-					pad_token_id=self.tokenizer.pad_token_id,
-					decoder_start_token_id=self.language_backbone.config.decoder_start_token_id
-				)
-				decoder_inputs_embeds = self.language_backbone.shared(decoder_input_ids)
-				
-				outputs = self.language_backbone(
-					inputs_embeds=input_embeds,
-					decoder_inputs_embeds=decoder_inputs_embeds,
-					attention_mask=attention_mask,
-					labels=labels)
-				if return_pred_answer:
-					pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
-				else:
-					pred_answers, pred_answers_conf = None, None
-			else:
-				outputs = None
+		input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, images, answers)
+		if labels is not None:
+			decoder_input_ids = shift_tokens_right(
+				labels,
+				pad_token_id=self.tokenizer.pad_token_id,
+				decoder_start_token_id=self.language_backbone.config.decoder_start_token_id
+			)
+			decoder_inputs_embeds = self.language_backbone.shared(decoder_input_ids)
+			
+			outputs = self.language_backbone(
+				inputs_embeds=input_embeds,
+				decoder_inputs_embeds=decoder_inputs_embeds,
+				attention_mask=attention_mask,
+				labels=labels)
+			if return_pred_answer:
 				pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
+			else:
+				pred_answers, pred_answers_conf = None, None
+		else:
+			outputs = None
+			pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
 
-			if self.page_retrieval == "oracle":
-				pred_answer_pages = batch["answer_page_idx"]
-
-			elif self.page_retrieval == "concat":
-				pred_answer_pages = None
+			pred_answer_pages = None
 
 		return outputs, pred_answers, pred_answer_pages, pred_answers_conf
 

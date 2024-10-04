@@ -72,13 +72,24 @@ class RAGVT5(torch.nn.Module):
 
 	def get_similarities(
 			self,
-			text_embeddings: torch.Tensor, # (bs, n_chunks, hidden_size)
+			text_embeddings: List[torch.Tensor], # (bs, n_chunks, hidden_size)
 			question_embeddings: torch.Tensor # (bs, hidden_size)
 	) -> torch.Tensor: # (bs, n_chunks)
-		norms_text = torch.norm(text_embeddings, dim=-1)
-		norms_quest = torch.norm(question_embeddings, dim=-1)
-		similarity = torch.matmul(text_embeddings, question_embeddings.unsqueeze(-1)).squeeze(-1) / (norms_text * norms_quest)
-		return similarity
+		similarities = []
+		bs = len(text_embeddings)
+
+		for i in range(bs):
+			text_embeds_i = text_embeddings[i] # (n_chunks_i, hidden_size)
+			question_embed_i = question_embeddings[i] # (hidden_size,)
+			
+			norms_text = torch.norm(text_embeds_i, dim=-1) # (n_chunks_i,)
+			norm_question = torch.norm(question_embed_i) # float
+			dot_products = torch.matmul(text_embeds_i, question_embed_i) # (n_chunks_i,)
+			similarity = dot_products / (norms_text * norm_question + 1e-8) # (n_chunks_i,)
+			
+			similarities.append(similarity)
+		
+		return similarities
 
 	def get_chunks(
 			self,
@@ -176,7 +187,6 @@ class RAGVT5(torch.nn.Module):
 		text_embeddings = [] # (bs, n_chunks, hidden_size)
 		for text_batch in text_chunks:
 			text_embeddings.append(self.embed(text_batch))
-		text_embeddings = torch.stack(text_embeddings)
 
 		# Get question embeddings
 		question_embeddings = self.embed(questions) # (bs, hidden_size)
@@ -368,9 +378,9 @@ class RAGVT5(torch.nn.Module):
 					"input_boxes": [flatten(batch) for batch in top_k_words_boxes],
 					"input_patches": [concatenate_patches(batch, mode="grid") for batch in top_k_patches]
 				})
-			return *result, retrieval
 		else:
-			return result
+			retrieval = None
+		return *result, retrieval
 
 	@torch_no_grad
 	def inference(

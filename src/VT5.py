@@ -97,12 +97,12 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		tensor_attention_mask = tensor_attention_mask.to(self.language_backbone.device)
 
 		# Get semantic and spatial embeddings
-		semantic_embedding = self.language_backbone.shared(tensor_input_ids)
-		spatial_embedding = self.spatial_embedding(tensor_boxes)
-		visual_embedding, visual_emb_mask = self.visual_embedding(images)
+		semantic_embedding = self.language_backbone.shared(tensor_input_ids).detach()
+		spatial_embedding = self.spatial_embedding(tensor_boxes).detach()
+		visual_embedding, visual_emb_mask = self.visual_embedding(images).detach()
 
 		# input_embeds = semantic_embedding
-		input_embeds = torch.add(semantic_embedding, spatial_embedding)
+		input_embeds = torch.add(semantic_embedding, spatial_embedding).detach()
 		input_embeds = torch.cat([input_embeds, visual_embedding], dim=1)  # Concatenate semantic + visual embeddings TODO: Provide visual bounding boxes.
 		tensor_attention_mask = torch.cat([tensor_attention_mask, visual_emb_mask], dim=1)
 
@@ -173,7 +173,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			output_attentions=True,
 			max_new_tokens=100,
 		)
-		pred_answers = self.tokenizer.batch_decode(output["sequences"], skip_special_tokens=True)
-		pred_answers_conf = get_generative_confidence(output)
+		pred_answers = self.tokenizer.batch_decode(output["sequences"].detach(), skip_special_tokens=True)
+		pred_answers_conf = get_generative_confidence(output.detach())
 
 		return pred_answers, pred_answers_conf

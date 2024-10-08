@@ -166,3 +166,4 @@ encodings/
 vectorstore*
 *.bin
 *temp.ipynb
+save/

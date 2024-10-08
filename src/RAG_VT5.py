@@ -1,4 +1,5 @@
 import torch
+from torch import no_grad
 from transformers import AutoTokenizer, AutoModel
 from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config
@@ -7,6 +8,7 @@ from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any, List
 from PIL import Image
 import numpy as np
+from time import time
 
 class RAGVT5(torch.nn.Module):
 	def __init__(self, config: dict):
@@ -29,10 +31,13 @@ class RAGVT5(torch.nn.Module):
 			self.model_path, config=t5_config, ignore_mismatched_sizes=True
 		)
 		self.generator.load_config(config)
-		if self.embed_model == "BGE":
+		if self.embed_model == "VT5":
+			self.embedding_dim = 768
+		elif self.embed_model == "BGE":
 			self.bge_tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5')
 			self.bge_model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5')
 			self.bge_model.eval()
+			self.embedding_dim = 384
 
 	def to(self, device: Any):
 		self.device = device
@@ -46,8 +51,10 @@ class RAGVT5(torch.nn.Module):
 	def train(self):
 		self.generator.train()
 
-	@torch_no_grad
+	@no_grad()
 	def embed(self, text: List[str]) -> torch.Tensor:
+		if not text:
+			return torch.empty(0, self.embedding_dim).to(self.device)
 		if self.embed_model == "VT5":
 			input_ids, attention_mask = self.generator.tokenizer(
 				text,
@@ -149,7 +156,7 @@ class RAGVT5(torch.nn.Module):
 			words_boxes_chunks.append(batch_words_box_chunks)
 		return text_chunks, boxes_chunks, page_indices, words_text_chunks, words_boxes_chunks
 
-	@torch_no_grad
+	@no_grad()
 	def retrieve(
 			self,
 			batch: dict,
@@ -304,17 +311,22 @@ class RAGVT5(torch.nn.Module):
 			k: int = 5
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
+		start_time = time()
 		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes = \
 			self.retrieve(batch, k=k, return_words=True, include_surroundings=include_surroundings)
+		retrieval_time = time() - start_time
 		bs = len(top_k_text)
 		# Generate
+		start_time = time()
 		if self.page_retrieval == "concat":
-			new_batch = batch.copy()
+			new_batch = {}
 			# Concatenate all the top k chunks
+			new_batch["questions"] = batch["questions"].copy() # (bs,)
 			new_batch["words"] = [flatten(batch) for batch in top_k_words_text]  # (bs, k * n_words)
 			new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes]  # (bs, k * n_words, 4)
 			new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches]  # (bs, h, w, 3)
-			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
+			with torch.no_grad():
+				result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
 		elif self.page_retrieval == "logits":
 			# Generate for each top k chunk and take the answer with highest confidence
 			results = []  # (bs, 4, k)
@@ -337,7 +349,8 @@ class RAGVT5(torch.nn.Module):
 				new_batch["boxes"] = boxes  # (k, n_words, 4)
 				new_batch["images"] = patches  # (k, h, w, 3)
 				# This treats k as batch size
-				result = self.generator(new_batch, return_pred_answer=return_pred_answer)
+				with torch.no_grad():
+					result = self.generator(new_batch, return_pred_answer=return_pred_answer)
 				results.append(result)
 				# Get confidence scores
 				confidences = torch.tensor(result[3])  # (k,)
@@ -354,6 +367,7 @@ class RAGVT5(torch.nn.Module):
 					else:
 						final_results[i].append(None)
 			result = tuple(final_results)
+		generation_time = time() - start_time
 
 		if return_retrieval:
 			# For visualization
@@ -364,6 +378,8 @@ class RAGVT5(torch.nn.Module):
 				"page_indices": top_k_page_indices,
 				"words_text": top_k_words_text,
 				"words_boxes": top_k_words_boxes,
+				"retrieval_time": retrieval_time,
+				"generation_time": generation_time
 			}
 			if self.page_retrieval == "concat":
 				retrieval.update({
@@ -382,7 +398,7 @@ class RAGVT5(torch.nn.Module):
 			retrieval = None
 		return *result, retrieval
 
-	@torch_no_grad
+	@torch.no_grad
 	def inference(
 			self,
 			batch: dict,
@@ -390,4 +406,5 @@ class RAGVT5(torch.nn.Module):
 			include_surroundings: int=0,
 			k: int=5
 	):
+		self.eval()
 		return self.forward(batch, return_retrieval=return_retrieval, include_surroundings=include_surroundings, k=k)

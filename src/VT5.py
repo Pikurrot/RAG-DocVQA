@@ -5,6 +5,7 @@ from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneratio
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
 from src._model_utils import shift_tokens_right, get_generative_confidence
 from typing import Any, Tuple, Optional
+from time import time
 
 class VT5ForConditionalGeneration(PreTrainedModel):
 	config_class = CustomT5Config
@@ -99,7 +100,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		# Get semantic and spatial embeddings
 		semantic_embedding = self.language_backbone.shared(tensor_input_ids).detach()
 		spatial_embedding = self.spatial_embedding(tensor_boxes).detach()
-		visual_embedding, visual_emb_mask = self.visual_embedding(images).detach()
+		visual_embedding, visual_emb_mask = self.visual_embedding(images)
+		visual_embedding = visual_embedding.detach()
+		visual_emb_mask = visual_emb_mask.detach()
 
 		# input_embeds = semantic_embedding
 		input_embeds = torch.add(semantic_embedding, spatial_embedding).detach()
@@ -134,7 +137,11 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		images = batch["images"]
 		answers = batch.get("answers", None)
 
+		start_time = time()
 		input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, images, answers)
+		input_embeds = input_embeds.detach()
+		attention_mask = attention_mask.detach()
+		# print("Time to prepare inputs: ", time() - start_time)
 		if labels is not None:
 			decoder_input_ids = shift_tokens_right(
 				labels,
@@ -165,15 +172,16 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			input_embeds: torch.Tensor,
 			attention_mask: torch.Tensor
 	) -> Tuple[list, list]:
-		output = self.language_backbone.generate(
-			inputs_embeds=input_embeds,
-			attention_mask=attention_mask,
-			output_scores=True,
-			return_dict_in_generate=True,
-			output_attentions=True,
-			max_new_tokens=100,
-		)
+		with torch.no_grad():
+			output = self.language_backbone.generate(
+				inputs_embeds=input_embeds,
+				attention_mask=attention_mask,
+				output_scores=True,
+				return_dict_in_generate=True,
+				output_attentions=False,
+				max_new_tokens=100,
+			)
 		pred_answers = self.tokenizer.batch_decode(output["sequences"].detach(), skip_special_tokens=True)
-		pred_answers_conf = get_generative_confidence(output.detach())
+		pred_answers_conf = get_generative_confidence(output)
 
 		return pred_answers, pred_answers_conf

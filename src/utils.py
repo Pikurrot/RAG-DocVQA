@@ -51,10 +51,14 @@ def parse_multitype2list_arg(argument: str) -> list:
 	return argument
 
 def save_json(path: str, data: dict):
+	if not os.path.exists(os.path.dirname(path)):
+		os.makedirs(os.path.dirname(path))
 	with open(path, "w+") as f:
-		json.dump(data, f)
+		json.dump(data, f, indent=4)
 
 def save_yaml(path: str, data: dict):
+	if not os.path.exists(os.path.dirname(path)):
+		os.makedirs(os.path.dirname(path))
 	with open(path, "w+") as f:
 		yaml.dump(data, f)
 
@@ -145,7 +149,7 @@ def correct_alignment(context: str, answer: str, start_idx: int, end_idx: int) -
 		print(context[start_idx: end_idx], answer)
 		return None
 
-def time_stamp_to_hhmmss(timestamp: int, string: bool=True) -> str:
+def time_stamp_to_hhmmss(timestamp: float, string: bool=True) -> str:
 	hh = int(timestamp/3600)
 	mm = int((timestamp-hh*3600)/60)
 	ss = int(timestamp - hh*3600 - mm*60)
@@ -167,6 +171,9 @@ def concatenate_patches(
 		image_patches: List[Image.Image],
 		mode: Literal["horizontal", "vertical", "grid"] = "grid"
 ) -> Image.Image:
+	if not image_patches:
+		# Return a blank image
+		return Image.new("RGB", (5, 5))
 	widths, heights = zip(*(i.size for i in image_patches))
 	if mode == "horizontal":
 		# Concatenate images horizontally

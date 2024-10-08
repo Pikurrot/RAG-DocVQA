@@ -4,6 +4,7 @@ from PIL import Image
 import numpy as np
 from typing import Literal, Any, List, Tuple, Dict
 from torch.utils.data import Dataset
+from time import time
 
 class MPDocVQA(Dataset):
 
@@ -18,6 +19,11 @@ class MPDocVQA(Dataset):
 		data = np.load(os.path.join(imdb_dir, "imdb_{:s}.npy".format(split)), allow_pickle=True)
 		self.header = data[0]
 		self.imdb = data[1:]
+		size = kwargs.get("size", 1.0)
+		if isinstance(size, float) and size < 1.0:
+			self.imdb = self.imdb[:int(size*len(self.imdb))]
+		elif isinstance(size, tuple):
+			self.imdb = self.imdb[int(size[0]*len(self.imdb)):int(size[1]*len(self.imdb))]
 
 		self.page_retrieval = page_retrieval.lower()
 		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom"])
@@ -53,6 +59,7 @@ class MPDocVQA(Dataset):
 		return self.__getitem__(idx)
 
 	def __getitem__(self, idx: int) -> Dict[str, Any]:
+		start_time = time()
 		record = self.imdb[idx]
 
 		question = record["question"]
@@ -85,7 +92,8 @@ class MPDocVQA(Dataset):
 			"context_page_corresp": context_page_corresp,
 			"answers": answers,
 			"answer_page_idx": answer_page_idx,
-			"num_pages": num_pages
+			"num_pages": num_pages,
+			"load_time": time()-start_time
 		}
 
 		if self.use_images:

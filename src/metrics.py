@@ -37,9 +37,12 @@ class Evaluator:
 	def get_retrieval_metric(
 			self,
 			gt_answer_page: List[int],
-			pred_answer_page: List[int]
+			pred_answer_pages: List[List[int]]
 	) -> list:
-		retrieval_precision = [1 if gt == pred else 0 for gt, pred in zip(gt_answer_page, pred_answer_page)]
+		retrieval_precision = [
+			1 if gt in preds else 0
+			for gt, preds in zip(gt_answer_page, pred_answer_pages)
+		]
 		return retrieval_precision
 
 	def update_global_metrics(

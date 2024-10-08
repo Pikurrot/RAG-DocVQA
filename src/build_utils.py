@@ -2,7 +2,7 @@ import transformers
 from src.RAG_VT5 import RAGVT5
 from src.MP_DocVQA import MPDocVQA
 from transformers import get_scheduler
-from typing import Any
+from typing import Any, Literal
 
 def build_optimizer(
 		model: Any,
@@ -22,9 +22,14 @@ def build_model(config: dict) -> RAGVT5:
 	model.to(model.device)
 	return model
 
-def build_dataset(config, split):
+def build_dataset(
+		config: dict,
+		split: Literal["train", "val", "test"],
+		size: float=1.0
+):
 	dataset_kwargs = {
 		"get_raw_ocr_data": True,
 		"use_images": True,
+		"size": size
 	}
 	return MPDocVQA(config["imdb_dir"], config["images_dir"], config["page_retrieval"], split, dataset_kwargs)

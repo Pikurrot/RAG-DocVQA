@@ -37,7 +37,7 @@ def process_next_batch():
 		retrieved_page_indices_list = retrieval["page_indices"][0]  # List of integers
 		if model.page_retrieval == "concat":
 			retrieved_page_indices = ", ".join([str(idx) for idx in retrieved_page_indices_list])
-		elif model.page_retrieval == "logits":
+		elif model.page_retrieval == "maxconf":
 			retrieved_page_indices = ", ".join([
 				f"[{str(idx)}]" if i == retrieval["max_confidence_indices"][0] else str(idx)
 				for i, idx in enumerate(retrieved_page_indices_list)

@@ -12,7 +12,7 @@ class MPDocVQA(Dataset):
 			self,
 			imdb_dir: str,
 			images_dir: str,
-			page_retrieval: Literal["oracle", "concat", "logits", "custom"],
+			page_retrieval: Literal["oracle", "concat", "logits", "maxconf", "custom"],
 			split: Literal["train", "val", "test"],
 			kwargs: dict = {}
 	):
@@ -26,7 +26,7 @@ class MPDocVQA(Dataset):
 			self.imdb = self.imdb[int(size[0]*len(self.imdb)):int(size[1]*len(self.imdb))]
 
 		self.page_retrieval = page_retrieval.lower()
-		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom"])
+		assert(self.page_retrieval in ["oracle", "concat", "logits", "maxconf", "custom"])
 
 		self.max_answers = 2
 		self.images_dir = images_dir

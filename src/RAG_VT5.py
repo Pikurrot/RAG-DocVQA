@@ -327,7 +327,7 @@ class RAGVT5(torch.nn.Module):
 			new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches]  # (bs, h, w, 3)
 			with torch.no_grad():
 				result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
-		elif self.page_retrieval == "logits":
+		elif self.page_retrieval == "maxconf":
 			# Generate for each top k chunk and take the answer with highest confidence
 			results = []  # (bs, 4, k)
 			max_confidence_indices = []
@@ -360,6 +360,10 @@ class RAGVT5(torch.nn.Module):
 			final_results = [[] for _ in range(4)]  # [[], [], [], []]
 			for b in range(bs):
 				result = results[b]
+				if result is None:
+					for i in range(4):
+						final_results[i].append(None)
+					continue
 				conf_idx = max_confidence_indices[b]
 				for i in range(4):
 					if result[i] is not None:
@@ -387,7 +391,7 @@ class RAGVT5(torch.nn.Module):
 					"input_boxes": new_batch["boxes"],
 					"input_patches": new_batch["images"]
 				})
-			elif self.page_retrieval == "logits":
+			elif self.page_retrieval == "maxconf":
 				retrieval.update({
 					"max_confidence_indices": max_confidence_indices,
 					"input_words": [flatten(batch) for batch in top_k_words_text],

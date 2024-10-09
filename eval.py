@@ -117,7 +117,7 @@ if __name__ == "__main__":
 	args = {
 		"model": "VT5",
 		"dataset": "MP-DocVQA",
-		"embed_model": "VT5" # VT5 or BGE
+		"embed_model": "BGE" # VT5 or BGE
 	}
 	args = argparse.Namespace(**args)
 	config = load_config(args)

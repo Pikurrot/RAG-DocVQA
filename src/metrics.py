@@ -27,6 +27,8 @@ class Evaluator:
 		# Compute metrics for each batch element
 		for b in range(len(preds)):
 			gt = [self._preprocess_str(gt_elm) for gt_elm in gt_answers[b]]
+			if preds[b] is None:
+				preds[b] = ""
 			pred = self._preprocess_str(preds[b])
 
 			batch_accuracy.append(self._calculate_accuracy(gt, pred, answer_types[b]))

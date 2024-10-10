@@ -19,7 +19,7 @@ def build_optimizer(
 	return optimizer, lr_scheduler
 
 def build_model(config: dict) -> RAGVT5:
-	if config["model_name"] == "VT5":
+	if config["model_name"] == "RAGVT5":
 		model = RAGVT5(config)
 	elif config["model_name"] == "Hi-VT5":
 		model = Proxy_HiVT5(config)
@@ -36,7 +36,7 @@ def build_dataset(
 		"use_images": True,
 		"size": size
 	}
-	if config["model_name"] == "hi-vt5":
+	if config["model_name"] == "Hi-VT5":
 		dataset_kwargs.update({
 			"max_pages": config.get("max_pages", 1),
 			"hierarchical_method": True

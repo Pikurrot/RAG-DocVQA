@@ -96,7 +96,7 @@ with gr.Blocks() as demo:
 if __name__ == "__main__":
 	print("Starting...")
 	args = {
-		"model": "VT5",
+		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE" # VT5 or BGE
 	}

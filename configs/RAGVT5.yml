@@ -1,5 +1,5 @@
 save_dir: save/
-model_name: VT5
+model_name: RAGVT5
 model_weights: rubentito/vt5-base-spdocvqa
 max_source_length: 512
 device: cuda

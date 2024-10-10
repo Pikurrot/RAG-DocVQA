@@ -24,6 +24,9 @@ def evaluate(
 ):
 	return_scores_by_sample = kwargs.get("return_scores_by_sample", False)
 	return_answers = kwargs.get("return_answers", False)
+	save_results = kwargs.get("save_results", False)
+	model_name = model.__class__.__name__
+	model_name = "Hi-VT5" if model_name == "Proxy_HiVT5" else model_name
 
 	if return_scores_by_sample:
 		scores_by_samples = {}
@@ -37,6 +40,7 @@ def evaluate(
 	load_time = 0
 	retrieval_time = 0
 	generation_time = 0
+	results = []
 
 	all_pred_answers = []
 	model.eval()
@@ -46,7 +50,7 @@ def evaluate(
 		bs = len(batch["question_id"])
 
 		# Inference using the model
-		if model.__class__.__name__ == "Proxy_HiVT5":
+		if model_name == "Hi-VT5":
 			start_time = time.time()
 			_, pred_answers, pred_answer_pages, _ = \
 				model.inference(batch, return_pred_answer=True)
@@ -54,7 +58,7 @@ def evaluate(
 				"retrieval_time": 0,
 				"generation_time": time.time() - start_time
 			}
-		elif model.__class__.__name__ == "RAGVT5":
+		elif model_name == "RAGVT5":
 			_, pred_answers, _, pred_answers_conf, retrieval = \
 				model.inference(batch, return_retrieval=True, include_surroundings=10, k=5)
 			pred_answer_pages = retrieval["page_indices"]
@@ -99,6 +103,20 @@ def evaluate(
 		
 		gc.collect()
 
+		if save_results:
+			for i in range(bs):
+				if pred_answer_pages is None:
+					answer_page = 0
+				if isinstance(pred_answer_pages[i], int):
+					answer_page = pred_answer_pages[i]
+				else:
+					answer_page = pred_answer_pages[i][0]
+				results.append({
+					"questionId": batch["question_id"][i],
+					"answer": pred_answers[i],
+					"answer_page": answer_page
+				})
+
 	if not return_scores_by_sample:
 		# Compute average metrics
 		total_accuracies = total_accuracies/len(data_loader.dataset)
@@ -121,14 +139,16 @@ def evaluate(
 		"total_load_time": load_time,
 		"total_retrieval_time": retrieval_time,
 		"total_generation_time": generation_time,
+		"results": results
 	}
 
 
 if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
-		"model": "HiVT5",
-		"dataset": "MP-DocVQA"
+		"model": "HiVT5", # RAGVT5, HiVT5
+		"dataset": "MP-DocVQA",
+		# "embed_model": "BGE", # BGE, VT5
 	}
 	args = argparse.Namespace(**args)
 	config = load_config(args)
@@ -138,13 +158,19 @@ if __name__ == "__main__":
 	model.to(config["device"])
 	print("Building dataset...")
 	data_size = 1.0
-	dataset = build_dataset(config, split="val", size=data_size)
+	dataset = build_dataset(config, split="test", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model
 	print("Evaluating...")
 	evaluator = Evaluator(case_sensitive=False)
-	eval_res = evaluate(val_data_loader, model, evaluator, return_scores_by_sample=False, return_answers=True)
+	eval_res = evaluate(
+		val_data_loader,
+		model, evaluator,
+		return_scores_by_sample=False,
+		return_answers=True,
+		save_results=True
+	)
 	accuracy = np.mean(eval_res["accuracy"])
 	anls = np.mean(eval_res["anls"])
 	answ_page_pred_acc = np.mean(eval_res["retrieval_precision"])
@@ -182,6 +208,9 @@ if __name__ == "__main__":
 		filename = "hivt5_{:}.json".format(experiment_date)
 	else:
 		filename = "{:}_{:}_{:}.json".format(config.get("embed_model", "").lower(), config.get("page_retrieval", "").lower(), experiment_date)
+	metrics_file = os.path.join(config["save_dir"], "metrics", filename)
 	results_file = os.path.join(config["save_dir"], "results", filename)
-	save_json(results_file, save_data)
+	save_json(metrics_file, save_data)
+	print("Metrics correctly saved in: {:s}".format(metrics_file))
+	save_json(results_file, eval_res["results"])
 	print("Results correctly saved in: {:s}".format(results_file))

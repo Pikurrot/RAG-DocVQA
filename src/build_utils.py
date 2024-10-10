@@ -1,5 +1,6 @@
 import transformers
 from src.RAG_VT5 import RAGVT5
+from src.HiVT5 import Proxy_HiVT5
 from src.MP_DocVQA import MPDocVQA
 from transformers import get_scheduler
 from typing import Any, Literal
@@ -18,7 +19,10 @@ def build_optimizer(
 	return optimizer, lr_scheduler
 
 def build_model(config: dict) -> RAGVT5:
-	model = RAGVT5(config)
+	if config["model_name"] == "VT5":
+		model = RAGVT5(config)
+	elif config["model_name"] == "Hi-VT5":
+		model = Proxy_HiVT5(config)
 	model.to(model.device)
 	return model
 
@@ -32,4 +36,9 @@ def build_dataset(
 		"use_images": True,
 		"size": size
 	}
+	if config["model_name"] == "hi-vt5":
+		dataset_kwargs.update({
+			"max_pages": config.get("max_pages", 1),
+			"hierarchical_method": True
+		})
 	return MPDocVQA(config["imdb_dir"], config["images_dir"], config["page_retrieval"], split, dataset_kwargs)

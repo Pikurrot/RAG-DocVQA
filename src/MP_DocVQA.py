@@ -63,27 +63,58 @@ class MPDocVQA(Dataset):
 		record = self.imdb[idx]
 
 		question = record["question"]
-		answers = list(set(answer.lower() for answer in record["answers"]))
-		answer_page_idx = record["answer_page_idx"]
+		answers = list(set(answer.lower() for answer in record.get("answers", [""])))
+		answer_page_idx = record.get("answer_page_idx", 0)
 		num_pages = record["imdb_doc_pages"]
 
-		context = []
-		for page_ix in range(record["imdb_doc_pages"]):
-			context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))
+		if self.page_retrieval in ["concat", "logits", "maxconf"]:
+			context = []
+			for page_ix in range(record["imdb_doc_pages"]):
+				context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))
 
-		context_page_corresp = None
+			context_page_corresp = None
 
-		if self.use_images:
-			image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
-			images = [Image.open(img_path).convert("RGB") for img_path in image_names]
+			if self.use_images:
+				image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
+				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
 
-		if self.get_raw_ocr_data:
+			if self.get_raw_ocr_data:
+				words = []
+				boxes = record["ocr_normalized_boxes"]
+				for p in range(num_pages):
+					words.append([word.lower() for word in record["ocr_tokens"][p]])
+			
+			start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
+
+		elif self.page_retrieval == "custom":
+			first_page, last_page = self.get_pages(record)
+			answer_page_idx = answer_page_idx - first_page
+			num_pages = len(range(first_page, last_page))
+
 			words = []
-			boxes = record["ocr_normalized_boxes"]
-			for p in range(num_pages):
-				words.append([word.lower() for word in record["ocr_tokens"][p]])
-		
-		start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
+			boxes = []
+			context = []
+			image_names = []
+
+			for page_ix in range(first_page, last_page):
+				words.append([word.lower() for word in record['ocr_tokens'][page_ix]])
+				boxes.append(np.array(record['ocr_normalized_boxes'][page_ix], dtype=np.float32))
+				context.append(' '.join([word.lower() for word in record['ocr_tokens'][page_ix]]))
+				image_names.append(os.path.join(self.images_dir, "{:s}.jpg".format(record['image_name'][page_ix])))
+
+			context_page_corresp = None
+
+			if num_pages < self.max_pages:
+				for _ in range(self.max_pages - num_pages):
+					words.append([''])
+					boxes.append(np.zeros([1, 4], dtype=np.float32))
+
+			if self.use_images:
+				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
+				images += [Image.new('RGB', (2, 2)) for i in range(self.max_pages - len(image_names))]  # Pad with 2x2 images.
+				
+			start_idxs, end_idxs = None, None
+
 
 		sample_info = {
 			"question_id": record["question_id"],
@@ -132,7 +163,7 @@ class MPDocVQA(Dataset):
 
 	def get_pages(self, sample_info: dict) -> Tuple[int, int]:
 		# TODO implement margins
-		answer_page = sample_info["answer_page_idx"]
+		answer_page = sample_info.get("answer_page_idx", 0)
 		document_pages = sample_info["imdb_doc_pages"]
 		if document_pages <= self.max_pages:
 			first_page, last_page = 0, document_pages

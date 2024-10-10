@@ -15,8 +15,6 @@ class RAGVT5(torch.nn.Module):
 		super(RAGVT5, self).__init__()
 
 		# Load config
-		self.save_dir = config.get("save_dir", "save/")
-		self.batch_size = config.get("batch_size", 16)
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
 		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)

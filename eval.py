@@ -4,6 +4,7 @@ import datetime
 import argparse
 import numpy as np
 import gc
+import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from src.MP_DocVQA import mpdocvqa_collate_fn
@@ -11,11 +12,13 @@ from src.metrics import Evaluator
 from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
 from src.RAG_VT5 import RAGVT5
+from src.HiVT5 import Proxy_HiVT5
+from typing import Union
 
 
 def evaluate(
 		data_loader: DataLoader,
-		model: RAGVT5,
+		model: Union[RAGVT5, Proxy_HiVT5],
 		evaluator: Evaluator,
 		**kwargs
 ):
@@ -43,9 +46,18 @@ def evaluate(
 		bs = len(batch["question_id"])
 
 		# Inference using the model
-		outputs, pred_answers, _, pred_answers_conf, retrieval = \
-			model.inference(batch, return_retrieval=True, include_surroundings=10, k=5)
-		pred_answer_pages = retrieval["page_indices"]
+		if model.__class__.__name__ == "Proxy_HiVT5":
+			start_time = time.time()
+			_, pred_answers, pred_answer_pages, _ = \
+				model.inference(batch, return_pred_answer=True)
+			retrieval = {
+				"retrieval_time": 0,
+				"generation_time": time.time() - start_time
+			}
+		elif model.__class__.__name__ == "RAGVT5":
+			_, pred_answers, _, pred_answers_conf, retrieval = \
+				model.inference(batch, return_retrieval=True, include_surroundings=10, k=5)
+			pred_answer_pages = retrieval["page_indices"]
 
 		# Compute metrics
 		metrics = evaluator.get_metrics(batch["answers"], pred_answers, batch.get("answer_type", None))
@@ -115,9 +127,8 @@ def evaluate(
 if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
-		"model": "VT5",
-		"dataset": "MP-DocVQA",
-		"embed_model": "BGE" # VT5 or BGE
+		"model": "HiVT5",
+		"dataset": "MP-DocVQA"
 	}
 	args = argparse.Namespace(**args)
 	config = load_config(args)
@@ -167,8 +178,10 @@ if __name__ == "__main__":
 		"Total generation time": f"{total_generation_time} ({eval_res['total_generation_time']/inf_time_f*100:.2f}%)",
 	}
 	experiment_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-	results_file = os.path.join(config["save_dir"], "results", "{:}_{:}_{:}.json".format(
-		config.get("embed_model", "").lower(), config.get("page_retrieval", "").lower(), experiment_date)
-	)
+	if config["model_name"] == "Hi-VT5":
+		filename = "hivt5_{:}.json".format(experiment_date)
+	else:
+		filename = "{:}_{:}_{:}.json".format(config.get("embed_model", "").lower(), config.get("page_retrieval", "").lower(), experiment_date)
+	results_file = os.path.join(config["save_dir"], "results", filename)
 	save_json(results_file, save_data)
 	print("Results correctly saved in: {:s}".format(results_file))

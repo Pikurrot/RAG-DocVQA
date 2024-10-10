@@ -1,5 +1,5 @@
 import editdistance
-from typing import List
+from typing import List, Union
 
 class Evaluator:
 	def __init__(
@@ -39,12 +39,18 @@ class Evaluator:
 	def get_retrieval_metric(
 			self,
 			gt_answer_page: List[int],
-			pred_answer_pages: List[List[int]]
+			pred_answer_pages: Union[List[int], List[List[int]]]
 	) -> list:
-		retrieval_precision = [
-			1 if gt in preds else 0
-			for gt, preds in zip(gt_answer_page, pred_answer_pages)
-		]
+		if isinstance(pred_answer_pages[0], int):
+			retrieval_precision = [
+				1 if gt == pred else 0
+				for gt, pred in zip(gt_answer_page, pred_answer_pages)
+			]
+		else:
+			retrieval_precision = [
+				1 if gt in preds else 0
+				for gt, preds in zip(gt_answer_page, pred_answer_pages)
+			]
 		return retrieval_precision
 
 	def update_global_metrics(

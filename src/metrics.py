@@ -1,5 +1,7 @@
 import editdistance
+import numpy as np
 from typing import List, Union
+from src.utils import get_similarity_score
 
 class Evaluator:
 	def __init__(
@@ -52,6 +54,27 @@ class Evaluator:
 				for gt, preds in zip(gt_answer_page, pred_answer_pages)
 			]
 		return retrieval_precision
+
+	def eval_retrieval(
+			self,
+			batch: dict,
+			retrieval: dict
+	) -> dict:
+		# Check if the answer is in the chunks
+		chunks = retrieval["text"] # (bs, k)
+		answers = batch["answers"] # (bs, n)
+		scores = [] # (bs,)
+		for b in range(len(answers)):
+			top_chunks = chunks[b]
+			possible_answers = answers[b]
+			best_score = 0
+			for ans in possible_answers:
+				ans_scores = [get_similarity_score(chunk, ans) for chunk in top_chunks]
+				best_score = max(best_score, max(ans_scores+[0]))
+			scores.append(np.log(best_score+1) / np.log(2))
+		return {
+			"chunk_score": scores
+		}
 
 	def update_global_metrics(
 			self,

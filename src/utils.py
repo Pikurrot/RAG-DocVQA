@@ -7,6 +7,7 @@ import json
 import argparse
 import numpy as np
 import torch
+import difflib
 from typing import Literal, Tuple, List
 
 def parse_args() -> argparse.Namespace:
@@ -213,3 +214,33 @@ def concatenate_patches(
 
 def flatten(lst: List[list]) -> list:
 	return [item for sublist in lst for item in sublist]
+
+def get_similarity_score(a: str, b: str):
+	"""
+	Calculate the highest similarity score between string b and any substring of a.
+	
+	Parameters:
+	a (str): The long text.
+	b (str): The short string to match.
+	
+	Returns:
+	float: A score between 0 and 1 representing the similarity.
+	"""
+	a = a.lower()
+	b = b.lower()
+	best_score = 0.0
+	best_match = ""
+	len_b = len(b)
+	len_a = len(a)
+	
+	for i in range(len_a - len_b + 1):
+		substring = a[i:i+len_b]
+		# Compute similarity ratio
+		score = difflib.SequenceMatcher(None, b, substring).ratio()
+		if score > best_score:
+			best_score = score
+			best_match = substring
+			if best_score == 1.0:
+				# Exact match found, no need to continue
+				break
+	return np.log(best_score + 1) / np.log(2)

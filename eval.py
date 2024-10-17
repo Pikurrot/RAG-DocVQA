@@ -33,10 +33,12 @@ def evaluate(
 		total_accuracies = []
 		total_anls = []
 		total_ret_prec = []
+		total_chunk_scores = []
 	else:
 		total_accuracies = 0
 		total_anls = 0
 		total_ret_prec = 0
+		total_chunk_scores = 0
 	load_time = 0
 	retrieval_time = 0
 	generation_time = 0
@@ -66,11 +68,12 @@ def evaluate(
 		# Compute metrics
 		metrics = evaluator.get_metrics(batch["answers"], pred_answers, batch.get("answer_type", None))
 
-		# Compute retrieval metric
+		# Evaluate retrieval
 		if "answer_page_idx" in batch and pred_answer_pages is not None:
 			ret_metric = evaluator.get_retrieval_metric(batch["answer_page_idx"], pred_answer_pages)
 		else:
 			ret_metric = [0 for _ in range(bs)]
+		ret_eval = evaluator.eval_retrieval(batch, retrieval)
 
 		if return_scores_by_sample:
 			# Save metrics for each sample
@@ -82,7 +85,8 @@ def evaluate(
 					"pred_answer": pred_answers[b],
 					"actual_answer": batch["answers"][b],
 					"pred_answer_conf": pred_answers_conf[b],
-					"pred_answer_page": pred_answer_pages[b] if pred_answer_pages is not None else None
+					"pred_answer_page": pred_answer_pages[b] if pred_answer_pages is not None else None,
+					"chunk_score": ret_eval["chunk_score"][b],
 				}
 
 		# Accumulate metrics for the whole dataset
@@ -90,10 +94,12 @@ def evaluate(
 			total_accuracies.extend(metrics["accuracy"])
 			total_anls.extend(metrics["anls"])
 			total_ret_prec.extend(ret_metric)
+			total_chunk_scores.extend(ret_eval["chunk_score"])
 		else:
 			total_accuracies += sum(metrics["accuracy"])
 			total_anls += sum(metrics["anls"])
 			total_ret_prec += sum(ret_metric)
+			total_chunk_scores += sum(ret_eval["chunk_score"])
 		load_time += sum(batch["load_time"])
 		retrieval_time += retrieval["retrieval_time"]
 		generation_time += retrieval["generation_time"]
@@ -105,7 +111,7 @@ def evaluate(
 
 		if save_results:
 			for i in range(bs):
-				if pred_answer_pages is None:
+				if pred_answer_pages is None or len(pred_answer_pages[i]) == 0:
 					answer_page = 0
 				if isinstance(pred_answer_pages[i], int):
 					answer_page = pred_answer_pages[i]
@@ -122,6 +128,7 @@ def evaluate(
 		total_accuracies = total_accuracies/len(data_loader.dataset)
 		total_anls = total_anls/len(data_loader.dataset)
 		total_ret_prec = total_ret_prec/len(data_loader.dataset)
+		total_chunk_scores = total_chunk_scores/len(data_loader.dataset)
 		scores_by_samples = []
 	avg_load_time = load_time/len(data_loader)
 	avg_retrieval_time = retrieval_time/len(data_loader)
@@ -131,6 +138,7 @@ def evaluate(
 		"accuracy": total_accuracies,
 		"anls": total_anls,
 		"retrieval_precision": total_ret_prec,
+		"chunk_score": total_chunk_scores,
 		"all_pred_answers": all_pred_answers,
 		"scores_by_samples": scores_by_samples,
 		"avg_load_time": avg_load_time,
@@ -146,9 +154,9 @@ def evaluate(
 if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
-		"model": "HiVT5", # RAGVT5, HiVT5
+		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
-		# "embed_model": "BGE", # BGE, VT5
+		"embed_model": "BGE", # BGE, VT5
 	}
 	args = argparse.Namespace(**args)
 	config = load_config(args)
@@ -158,7 +166,7 @@ if __name__ == "__main__":
 	model.to(config["device"])
 	print("Building dataset...")
 	data_size = 1.0
-	dataset = build_dataset(config, split="test", size=data_size)
+	dataset = build_dataset(config, split="val", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model
@@ -167,13 +175,14 @@ if __name__ == "__main__":
 	eval_res = evaluate(
 		val_data_loader,
 		model, evaluator,
-		return_scores_by_sample=False,
+		return_scores_by_sample=True,
 		return_answers=True,
-		save_results=True
+		save_results=False
 	)
 	accuracy = np.mean(eval_res["accuracy"])
 	anls = np.mean(eval_res["anls"])
 	answ_page_pred_acc = np.mean(eval_res["retrieval_precision"])
+	avg_chunk_score = np.mean(eval_res["chunk_score"])
 	
 	# Save results
 	inf_time_f = time.time() - start_time
@@ -193,6 +202,7 @@ if __name__ == "__main__":
 		"Avg accuracy": accuracy,
 		"Avg ANLS": anls,
 		"Avg retrieval precision": answ_page_pred_acc,
+		"Avg chunk score": avg_chunk_score,
 		"Scores by samples": eval_res["scores_by_samples"],
 		"Dataset size": f"{data_size*100}%",
 		"Inference time": inf_time,
@@ -212,5 +222,6 @@ if __name__ == "__main__":
 	results_file = os.path.join(config["save_dir"], "results", filename)
 	save_json(metrics_file, save_data)
 	print("Metrics correctly saved in: {:s}".format(metrics_file))
-	save_json(results_file, eval_res["results"])
-	print("Results correctly saved in: {:s}".format(results_file))
+	if eval_res["results"]:
+		save_json(results_file, eval_res["results"])
+		print("Results correctly saved in: {:s}".format(results_file))

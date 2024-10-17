@@ -320,9 +320,9 @@ class RAGVT5(torch.nn.Module):
 			new_batch = {}
 			# Concatenate all the top k chunks
 			new_batch["questions"] = batch["questions"].copy() # (bs,)
-			new_batch["words"] = [flatten(batch) for batch in top_k_words_text]  # (bs, k * n_words)
-			new_batch["boxes"] = [flatten(batch) for batch in top_k_words_boxes]  # (bs, k * n_words, 4)
-			new_batch["images"] = [concatenate_patches(batch, mode="grid") for batch in top_k_patches]  # (bs, h, w, 3)
+			new_batch["words"] = [flatten(b) for b in top_k_words_text]  # (bs, k * n_words)
+			new_batch["boxes"] = [flatten(b) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
+			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			with torch.no_grad():
 				result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
 		elif self.page_retrieval == "maxconf":
@@ -392,9 +392,9 @@ class RAGVT5(torch.nn.Module):
 			elif self.page_retrieval == "maxconf":
 				retrieval.update({
 					"max_confidence_indices": max_confidence_indices,
-					"input_words": [flatten(batch) for batch in top_k_words_text],
-					"input_boxes": [flatten(batch) for batch in top_k_words_boxes],
-					"input_patches": [concatenate_patches(batch, mode="grid") for batch in top_k_patches]
+					"input_words": [flatten(b) for b in top_k_words_text],
+					"input_boxes": [flatten(b) for b in top_k_words_boxes],
+					"input_patches": [concatenate_patches(b, mode="grid") for b in top_k_patches]
 				})
 		else:
 			retrieval = None

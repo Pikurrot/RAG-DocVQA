@@ -770,6 +770,9 @@ class Proxy_HiVT5:
 		pred_answers = self.tokenizer.batch_decode(output['sequences'], skip_special_tokens=True)
 		
 		if output.scores is not None:
+			# print(output.keys()) # odict_keys(['sequences', 'scores', 'decoder_attentions', 'cross_attentions', 'past_key_values'])
+			# pred_answer_pages = output.ret_logits.argmax(dim=-1).tolist()
+			# ----- HERE -----
 			pred_answer_pages = output.scores[-1].argmax(dim=-1).tolist()
 		else:
 			pred_answer_pages = None

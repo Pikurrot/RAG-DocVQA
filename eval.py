@@ -54,7 +54,7 @@ def evaluate(
 		# Inference using the model
 		if model_name == "Hi-VT5":
 			start_time = time.time()
-			_, pred_answers, pred_answer_pages, _ = \
+			_, pred_answers, pred_answer_pages, pred_answers_conf = \
 				model.inference(batch, return_pred_answer=True)
 			retrieval = {
 				"retrieval_time": 0,
@@ -73,7 +73,12 @@ def evaluate(
 			ret_metric = evaluator.get_retrieval_metric(batch["answer_page_idx"], pred_answer_pages)
 		else:
 			ret_metric = [0 for _ in range(bs)]
-		ret_eval = evaluator.eval_retrieval(batch, retrieval)
+		if model_name == "Hi-VT5":
+			ret_eval = {
+				"chunk_score": [0 for _ in range(bs)]
+			}
+		elif model_name == "RAGVT5":
+			ret_eval = evaluator.eval_retrieval(batch, retrieval)
 
 		if return_scores_by_sample:
 			# Save metrics for each sample

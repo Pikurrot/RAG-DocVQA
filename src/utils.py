@@ -104,6 +104,12 @@ def check_config(config: dict) -> bool:
 	return True
 
 def load_config(args: argparse.Namespace) -> dict:
+	if args.model == "HiVT5":
+		args.embed_model = None
+		args.chunk_num = None
+		args.chunk_size = None
+		args.overlap = None
+		args.include_surroundings = None
 	model_config_path = "configs/{:}.yml".format(args.model)
 	dataset_config_path = "configs/{:}.yml".format(args.dataset)
 	model_config = parse_config(yaml.safe_load(open(model_config_path, "r")), args)

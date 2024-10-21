@@ -305,13 +305,15 @@ class RAGVT5(torch.nn.Module):
 			batch: dict,
 			return_pred_answer: bool = True,
 			return_retrieval: bool = False,
-			include_surroundings: int = 0,
-			k: int = 5
+			chunk_num: int = 5,
+			chunk_size: int = 30,
+			overlap: int = 0,
+			include_surroundings: int = 0
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
 		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes = \
-			self.retrieve(batch, k=k, return_words=True, include_surroundings=include_surroundings)
+			self.retrieve(batch, chunk_num, chunk_size, overlap, True, include_surroundings)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
 		# Generate
@@ -405,8 +407,17 @@ class RAGVT5(torch.nn.Module):
 			self,
 			batch: dict,
 			return_retrieval: bool=False,
+			chunk_num: int=5,
+			chunk_size: int=30,
+			overlap: int=0,
 			include_surroundings: int=0,
-			k: int=5
 	):
 		self.eval()
-		return self.forward(batch, return_retrieval=return_retrieval, include_surroundings=include_surroundings, k=k)
+		return self.forward(
+			batch,
+			return_retrieval=return_retrieval,
+			chunk_num=chunk_num,
+			chunk_size=chunk_size,
+			overlap=overlap,
+			include_surroundings=include_surroundings
+		)

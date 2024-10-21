@@ -54,15 +54,23 @@ def evaluate(
 		# Inference using the model
 		if model_name == "Hi-VT5":
 			start_time = time.time()
-			_, pred_answers, pred_answer_pages, pred_answers_conf = \
-				model.inference(batch, return_pred_answer=True)
+			_, pred_answers, pred_answer_pages, pred_answers_conf = model.inference(
+				batch,
+				return_pred_answer=True
+			)
 			retrieval = {
 				"retrieval_time": 0,
 				"generation_time": time.time() - start_time
 			}
 		elif model_name == "RAGVT5":
-			_, pred_answers, _, pred_answers_conf, retrieval = \
-				model.inference(batch, return_retrieval=True, include_surroundings=10, k=5)
+			_, pred_answers, _, pred_answers_conf, retrieval = model.inference(
+				batch,
+				return_retrieval=True,
+				chunk_num=kwargs.get("chunk_num", 5),
+				chunk_size=kwargs.get("chunk_size", 30),
+				overlap=kwargs.get("overlap", 0),
+				include_surroundings=kwargs.get("include_surroundings", 10)
+			)
 			pred_answer_pages = retrieval["page_indices"]
 
 		# Compute metrics
@@ -162,6 +170,11 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"chunk_num": 5,
+		"chunk_size": 120,
+		"overlap": 0,
+		"include_surroundings": 10,
 	}
 	args = argparse.Namespace(**args)
 	config = load_config(args)
@@ -182,7 +195,11 @@ if __name__ == "__main__":
 		model, evaluator,
 		return_scores_by_sample=True,
 		return_answers=True,
-		save_results=False
+		save_results=False,
+		chunk_num=config.get("chunk_num", 5),
+		chunk_size=config.get("chunk_size", 30),
+		overlap=config.get("overlap", 0),
+		include_surroundings=config.get("include_surroundings", 10)
 	)
 	accuracy = np.mean(eval_res["accuracy"])
 	anls = np.mean(eval_res["anls"])
@@ -204,11 +221,14 @@ if __name__ == "__main__":
 		"Dataset": config["dataset_name"],
 		"Page retrieval": config.get("page_retrieval", "-").capitalize(),
 		"embed_model": config.get("embed_model", "-"),
+		"chunk_num": config.get("chunk_num", "-"),
+		"chunk_size": config.get("chunk_size", "-"),
+		"overlap": config.get("overlap", "-"),
+		"include_surroundings": config.get("include_surroundings", "-"),
 		"Avg accuracy": accuracy,
 		"Avg ANLS": anls,
 		"Avg retrieval precision": answ_page_pred_acc,
 		"Avg chunk score": avg_chunk_score,
-		"Scores by samples": eval_res["scores_by_samples"],
 		"Dataset size": f"{data_size*100}%",
 		"Inference time": inf_time,
 		"Avg load time": avg_load_time,
@@ -217,6 +237,7 @@ if __name__ == "__main__":
 		"Total load time": f"{total_load_time} ({eval_res['total_load_time']/inf_time_f*100:.2f}%)",
 		"Total retrieval time": f"{total_retrieval_time} ({eval_res['total_retrieval_time']/inf_time_f*100:.2f}%)",
 		"Total generation time": f"{total_generation_time} ({eval_res['total_generation_time']/inf_time_f*100:.2f}%)",
+		"Scores by samples": eval_res["scores_by_samples"]
 	}
 	experiment_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 	if config["model_name"] == "Hi-VT5":

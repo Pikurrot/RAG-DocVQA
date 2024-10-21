@@ -11,14 +11,26 @@ def get_dataloader_generator(dataloader):
         yield batch
 
 # Function to process the current batch with a given question
-def process_next_batch(question):
+def process_next_batch(
+          question: str,
+          chunk_num: int = 5,
+          chunk_size: int = 30,
+          overlap: int = 0,
+          include_surroundings: int = 10
+    ):
     try:
         global batch
         batch["questions"] = [question]  # Update the batch with the input question
 
         # Inference using the model
-        outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = \
-            model.inference(batch, return_retrieval=True, include_surroundings=10, k=5)
+        outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = model.inference(
+                batch,
+                return_retrieval=True,
+                chunk_num=chunk_num,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                include_surroundings=include_surroundings
+		)
 
         # Prepare original information
         original_images = batch["images"][0]  # List of PIL images

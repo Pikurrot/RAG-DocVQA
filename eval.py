@@ -119,8 +119,6 @@ def evaluate(
 
 		if return_answers:
 			all_pred_answers.extend(pred_answers)
-		
-		gc.collect()
 
 		if save_results:
 			for i in range(bs):
@@ -135,6 +133,12 @@ def evaluate(
 					"answer": pred_answers[i],
 					"answer_page": answer_page
 				})
+		
+		# Free memory
+		del pred_answers, pred_answer_pages, pred_answers_conf, metrics, ret_metric, ret_eval, batch
+		gc.collect()
+		torch.cuda.empty_cache()
+		# print(torch.cuda.memory_summary(device=None, abbreviated=False))
 
 	if not return_scores_by_sample:
 		# Compute average metrics

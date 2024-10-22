@@ -1,6 +1,5 @@
 name: mp_docvqa
 channels:
-  - pytorch
   - nvidia
   - huggingface
   - conda-forge
@@ -13,23 +12,17 @@ dependencies:
   - numpy
   - pillow
   - matplotlib
-  - pytorch
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=11.8
-  - faiss-gpu=1.8.0
   - pip:
     - onnx
     - wandb==0.16.6
     - onnxruntime
     - ipykernel
+    - ipython
     - sentencepiece
     - datasets
     - transformers[sentencepiece]
     - transformers==4.42.4
     - editdistance
-    - langchain==0.2.16
-    - langchain-community==0.2.17
-    - langchain-huggingface==0.0.3
     - pdfminer
     - pdf2image
+    - gradio

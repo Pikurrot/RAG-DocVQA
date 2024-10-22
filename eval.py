@@ -175,8 +175,8 @@ if __name__ == "__main__":
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
-		"chunk_num": 5,
-		"chunk_size": 120,
+		"chunk_num": 10,
+		"chunk_size": 60,
 		"overlap": 0,
 		"include_surroundings": 10,
 	}

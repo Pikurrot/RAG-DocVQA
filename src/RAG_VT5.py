@@ -131,22 +131,31 @@ class RAGVT5(torch.nn.Module):
 			batch_words_text_chunks = []
 			batch_words_box_chunks = []
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)):
-				# Split the page words and boxes into chunks
-				for i in range(0, len(page_words), chunk_size - overlap):
-					chunk_words = page_words[i:i + chunk_size]
-					chunk_text = " ".join(chunk_words)
-					chunk_boxes = page_boxes[i:i + chunk_size]
-					batch_text_chunks.append(chunk_text)
-					# Find box of the chunk
-					min_x = min([box[0] for box in chunk_boxes])
-					min_y = min([box[1] for box in chunk_boxes])
-					max_x = max([box[2] for box in chunk_boxes])
-					max_y = max([box[3] for box in chunk_boxes])
-					batch_box_chunks.append([min_x, min_y, max_x, max_y])
+				if self.page_retrieval == "oracle":
+					# If oracle, take the whole page as a chunk
+					batch_text_chunks.append(" ".join(page_words))
+					batch_box_chunks.append([0, 0, 1, 1])
 					batch_page_indices.append(p)
 					if return_words:
-						batch_words_text_chunks.append(chunk_words)
-						batch_words_box_chunks.append(chunk_boxes)
+						batch_words_text_chunks.append(page_words)
+						batch_words_box_chunks.append(page_boxes)
+				else:
+					# Else, split the page words and boxes into chunks
+					for i in range(0, len(page_words), chunk_size - overlap):
+						chunk_words = page_words[i:i + chunk_size]
+						chunk_text = " ".join(chunk_words)
+						chunk_boxes = page_boxes[i:i + chunk_size]
+						batch_text_chunks.append(chunk_text)
+						# Find box of the chunk
+						min_x = min([box[0] for box in chunk_boxes])
+						min_y = min([box[1] for box in chunk_boxes])
+						max_x = max([box[2] for box in chunk_boxes])
+						max_y = max([box[3] for box in chunk_boxes])
+						batch_box_chunks.append([min_x, min_y, max_x, max_y])
+						batch_page_indices.append(p)
+						if return_words:
+							batch_words_text_chunks.append(chunk_words)
+							batch_words_box_chunks.append(chunk_boxes)
 			text_chunks.append(batch_text_chunks)
 			boxes_chunks.append(batch_box_chunks)
 			page_indices.append(batch_page_indices)
@@ -318,8 +327,8 @@ class RAGVT5(torch.nn.Module):
 		bs = len(top_k_text)
 		# Generate
 		start_time = time()
-		if self.page_retrieval == "concat":
-			new_batch = {}
+		new_batch = {}
+		if self.page_retrieval in ["oracle", "concat"]:
 			# Concatenate all the top k chunks
 			new_batch["questions"] = batch["questions"].copy() # (bs,)
 			new_batch["words"] = [flatten(b) for b in top_k_words_text]  # (bs, k * n_words)
@@ -343,7 +352,6 @@ class RAGVT5(torch.nn.Module):
 					results.append(None)
 					max_confidence_indices.append(None)
 					continue
-				new_batch = {}
 				new_batch["questions"] = [batch["questions"][b]] * len(words)  # (k,)
 				new_batch["words"] = words  # (k, n_words)
 				new_batch["boxes"] = boxes  # (k, n_words, 4)
@@ -385,7 +393,7 @@ class RAGVT5(torch.nn.Module):
 				"retrieval_time": retrieval_time,
 				"generation_time": generation_time
 			}
-			if self.page_retrieval == "concat":
+			if self.page_retrieval in ["oracle", "concat"]:
 				retrieval.update({
 					"input_words": new_batch["words"],
 					"input_boxes": new_batch["boxes"],

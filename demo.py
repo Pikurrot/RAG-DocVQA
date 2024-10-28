@@ -18,7 +18,7 @@ def process_next_batch():
 
 		# Inference using the model
 		outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = \
-			model.inference(batch, return_retrieval=True, include_surroundings=10, k=5)
+			model.inference(batch, return_retrieval=True, chunk_num=5, chunk_size=30, overlap=0, include_surroundings=10)
 
 		# Prepare original information
 		original_images = batch["images"][0]  # List of PIL images
@@ -35,7 +35,9 @@ def process_next_batch():
 		retrieved_text = " ".join(retrieved_text_list)
 
 		retrieved_page_indices_list = retrieval["page_indices"][0]  # List of integers
-		if model.page_retrieval == "concat":
+		if model.page_retrieval == "oracle":
+			retrieved_page_indices = str(retrieved_page_indices_list[0])
+		elif model.page_retrieval == "concat":
 			retrieved_page_indices = ", ".join([str(idx) for idx in retrieved_page_indices_list])
 		elif model.page_retrieval == "maxconf":
 			retrieved_page_indices = ", ".join([

@@ -167,3 +167,4 @@ vectorstore*
 *.bin
 *temp.ipynb
 save/
+*screenlog*

@@ -67,7 +67,22 @@ class MPDocVQA(Dataset):
 		answer_page_idx = record.get("answer_page_idx", 0)
 		num_pages = record["imdb_doc_pages"]
 
-		if self.page_retrieval in ["concat", "logits", "maxconf"]:
+		if self.page_retrieval == "oracle":
+			context = [" ".join([word.lower() for word in record["ocr_tokens"][answer_page_idx]])]
+			context_page_corresp = None
+			num_pages = 1
+
+			if self.use_images:
+				image_names = os.path.join(self.images_dir, "{:s}.jpg".format(record['image_name'][answer_page_idx]))
+				images = [Image.open(image_names).convert("RGB")]
+
+			if self.get_raw_ocr_data:
+				words = [[word.lower() for word in record['ocr_tokens'][answer_page_idx]]]
+				boxes = [record['ocr_normalized_boxes'][answer_page_idx]]
+			
+			start_idxs, end_idxs = self._get_start_end_idx(context[0], answers)
+		
+		elif self.page_retrieval in ["concat", "logits", "maxconf"]:
 			context = []
 			for page_ix in range(record["imdb_doc_pages"]):
 				context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))

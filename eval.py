@@ -122,9 +122,9 @@ def evaluate(
 
 		if save_results:
 			for i in range(bs):
-				if pred_answer_pages is None or len(pred_answer_pages[i]) == 0:
+				if pred_answer_pages is None or len(pred_answer_pages) == 0 or len(pred_answer_pages[i]) == 0:
 					answer_page = 0
-				if isinstance(pred_answer_pages[i], int):
+				elif isinstance(pred_answer_pages[i], int):
 					answer_page = pred_answer_pages[i]
 				else:
 					answer_page = pred_answer_pages[i][0]
@@ -177,9 +177,11 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
 		"chunk_num": 10,
 		"chunk_size": 60,
-		"overlap": 0,
-		"include_surroundings": 10,
+		"overlap": 10,
+		"include_surroundings": 0,
+		"visible_devices": "1",
 	}
+	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	start_time = time.time()
@@ -188,7 +190,7 @@ if __name__ == "__main__":
 	model.to(config["device"])
 	print("Building dataset...")
 	data_size = 1.0
-	dataset = build_dataset(config, split="val", size=data_size)
+	dataset = build_dataset(config, split="test", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model
@@ -199,10 +201,10 @@ if __name__ == "__main__":
 		model, evaluator,
 		return_scores_by_sample=True,
 		return_answers=True,
-		save_results=False,
-		chunk_num=config.get("chunk_num", 5),
-		chunk_size=config.get("chunk_size", 30),
-		overlap=config.get("overlap", 0),
+		save_results=True,
+		chunk_num=config.get("chunk_num", 10),
+		chunk_size=config.get("chunk_size", 60),
+		overlap=config.get("overlap", 10),
 		include_surroundings=config.get("include_surroundings", 10)
 	)
 	accuracy = np.mean(eval_res["accuracy"])

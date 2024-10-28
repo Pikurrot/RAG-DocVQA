@@ -307,6 +307,9 @@ class RAGVT5(torch.nn.Module):
 				batch_patches.append(patch)
 			top_k_patches.append(batch_patches)
 
+		if self.page_retrieval == "oracle":
+			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
+
 		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes
 
 	def forward(

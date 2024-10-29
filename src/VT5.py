@@ -5,7 +5,6 @@ from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneratio
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
 from src._model_utils import shift_tokens_right, get_generative_confidence
 from typing import Any, Tuple, Optional
-from time import time
 
 class VT5ForConditionalGeneration(PreTrainedModel):
 	config_class = CustomT5Config
@@ -98,14 +97,14 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		tensor_attention_mask = tensor_attention_mask.to(self.language_backbone.device)
 
 		# Get semantic and spatial embeddings
-		semantic_embedding = self.language_backbone.shared(tensor_input_ids).detach()
-		spatial_embedding = self.spatial_embedding(tensor_boxes).detach()
+		semantic_embedding = self.language_backbone.shared(tensor_input_ids)
+		spatial_embedding = self.spatial_embedding(tensor_boxes)
 		visual_embedding, visual_emb_mask = self.visual_embedding(images)
-		visual_embedding = visual_embedding.detach()
-		visual_emb_mask = visual_emb_mask.detach()
+		visual_embedding = visual_embedding
+		visual_emb_mask = visual_emb_mask
 
 		# input_embeds = semantic_embedding
-		input_embeds = torch.add(semantic_embedding, spatial_embedding).detach()
+		input_embeds = torch.add(semantic_embedding, spatial_embedding)
 		input_embeds = torch.cat([input_embeds, visual_embedding], dim=1)  # Concatenate semantic + visual embeddings TODO: Provide visual bounding boxes.
 		tensor_attention_mask = torch.cat([tensor_attention_mask, visual_emb_mask], dim=1)
 
@@ -137,11 +136,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		images = batch["images"]
 		answers = batch.get("answers", None)
 
-		start_time = time()
 		input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, images, answers)
-		input_embeds = input_embeds.detach()
-		attention_mask = attention_mask.detach()
-		# print("Time to prepare inputs: ", time() - start_time)
+		input_embeds = input_embeds
+		attention_mask = attention_mask
 		if labels is not None:
 			decoder_input_ids = shift_tokens_right(
 				labels,
@@ -181,7 +178,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				output_attentions=False,
 				max_new_tokens=100,
 			)
-		pred_answers = self.tokenizer.batch_decode(output["sequences"].detach(), skip_special_tokens=True)
+		pred_answers = self.tokenizer.batch_decode(output["sequences"], skip_special_tokens=True)
 		pred_answers_conf = get_generative_confidence(output)
 
 		return pred_answers, pred_answers_conf

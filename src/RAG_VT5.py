@@ -61,8 +61,8 @@ class RAGVT5(torch.nn.Module):
 				truncation=True
 			).values()
 			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
-			text_tokens_embeddings = self.generator.language_backbone.shared(input_ids).detach()
-			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask).detach()
+			text_tokens_embeddings = self.generator.language_backbone.shared(input_ids)
+			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
 		elif self.embed_model == "BGE":
 			encoded_input = self.bge_tokenizer(
 				text,
@@ -71,8 +71,8 @@ class RAGVT5(torch.nn.Module):
 				truncation=True
 			)
 			encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
-			text_tokens_embeddings = self.bge_model(**encoded_input)[0][:,0].detach()
-			text_embeddings = torch.nn.functional.normalize(text_tokens_embeddings, p=2, dim=-1).detach()
+			text_tokens_embeddings = self.bge_model(**encoded_input)[0][:,0]
+			text_embeddings = torch.nn.functional.normalize(text_tokens_embeddings, p=2, dim=-1)
 		return text_embeddings
 
 	def get_similarities(
@@ -84,8 +84,8 @@ class RAGVT5(torch.nn.Module):
 		bs = len(text_embeddings)
 
 		for i in range(bs):
-			text_embeds_i = text_embeddings[i].detach() # (n_chunks_i, hidden_size)
-			question_embed_i = question_embeddings[i].detach() # (hidden_size,)
+			text_embeds_i = text_embeddings[i] # (n_chunks_i, hidden_size)
+			question_embed_i = question_embeddings[i] # (hidden_size,)
 			
 			norms_text = torch.norm(text_embeds_i, dim=-1) # (n_chunks_i,)
 			norm_question = torch.norm(question_embed_i) # float

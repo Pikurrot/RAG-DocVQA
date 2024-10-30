@@ -209,7 +209,7 @@ if __name__ == "__main__":
 	)
 	accuracy = np.mean(eval_res["accuracy"])
 	anls = np.mean(eval_res["anls"])
-	answ_page_pred_acc = np.mean(eval_res["retrieval_precision"])
+	retrieval_precision = np.mean(eval_res["retrieval_precision"])
 	avg_chunk_score = np.mean(eval_res["chunk_score"])
 	
 	# Save results
@@ -233,7 +233,7 @@ if __name__ == "__main__":
 		"include_surroundings": config.get("include_surroundings", "-"),
 		"Avg accuracy": accuracy,
 		"Avg ANLS": anls,
-		"Avg retrieval precision": answ_page_pred_acc,
+		"Avg retrieval precision": retrieval_precision,
 		"Avg chunk score": avg_chunk_score,
 		"Dataset size": f"{data_size*100}%",
 		"Inference time": inf_time,

@@ -62,15 +62,18 @@ class Logger:
             self,
             accuracy: float,
             anls: float,
-            ret_prec: float,
+            retrieval_precision: float,
+            avg_chunk_score: float,
             update_best: bool=False
     ):
 
-        str_msg = "Epoch {:d}: Accuracy {:2.2f}     ANLS {:2.4f}    Retrieval precision: {:2.2f}%".format(self.current_epoch, accuracy*100, anls, ret_prec*100)
+        str_msg = "Epoch {:d}: Accuracy {:2.4f}     ANLS {:2.4f}    Retrieval precision: {:2.4f}   Avg. chunk score: {:2.4f}"\
+            .format(self.current_epoch, accuracy, anls, retrieval_precision, avg_chunk_score)
         self.logger.log({
             "Val/Epoch Accuracy": accuracy,
             "Val/Epoch ANLS": anls,
-            "Val/Epoch Ret. Prec": ret_prec,
+            "Val/Epoch Ret. Prec": retrieval_precision,
+            "Val/Epoch Chunk Score": avg_chunk_score
         }, step=self.current_epoch*self.len_dataset + self.len_dataset)
 
         if update_best:

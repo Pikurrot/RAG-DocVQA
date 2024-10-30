@@ -137,8 +137,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		answers = batch.get("answers", None)
 
 		input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, images, answers)
-		input_embeds = input_embeds
-		attention_mask = attention_mask
+
 		if labels is not None:
 			decoder_input_ids = shift_tokens_right(
 				labels,
@@ -156,6 +155,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
 			else:
 				pred_answers, pred_answers_conf = None, None
+			pred_answer_pages = None
 		else:
 			outputs = None
 			pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)

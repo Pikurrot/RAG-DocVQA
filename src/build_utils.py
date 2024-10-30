@@ -6,12 +6,12 @@ from transformers import get_scheduler
 from typing import Any, Literal
 
 def build_optimizer(
-		model: Any,
+		model: RAGVT5,
 		length_train_loader: int,
 		config: dict
 ):
 	optimizer_class = getattr(transformers, "AdamW")
-	optimizer = optimizer_class(model.model.parameters(), lr=float(config["lr"]))
+	optimizer = optimizer_class(model.generator.parameters(), lr=float(config["lr"]))
 	num_training_steps = config["train_epochs"] * length_train_loader
 	lr_scheduler = get_scheduler(
 		name="linear", optimizer=optimizer, num_warmup_steps=config["warmup_iterations"], num_training_steps=num_training_steps

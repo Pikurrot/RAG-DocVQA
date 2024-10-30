@@ -10,7 +10,7 @@ from src.utils import seed_everything, load_config
 from src.build_utils import build_model, build_dataset, build_optimizer
 from src.MP_DocVQA import mpdocvqa_collate_fn
 from eval import evaluate
-from checkpoint import save_model
+from src.checkpoint import save_model
 from typing import Any
 
 def train_epoch(
@@ -28,7 +28,7 @@ def train_epoch(
 		gt_answers = batch["answers"]
 		outputs, pred_answers, pred_answer_pages, pred_answers_conf, _ = model.forward(
 			batch,
-			return_pred_answer=False,
+			return_pred_answer=True,
 			return_retrieval=False,
 			chunk_num=kwargs.get("chunk_num", 5),
 			chunk_size=kwargs.get("chunk_size", 30),
@@ -58,7 +58,7 @@ def train_epoch(
 		if hasattr(outputs, "ret_loss"):
 			log_dict["Train/Batch retrieval loss"] = outputs.ret_loss.item()
 
-		if "answer_page_idx" in batch and None not in batch["answer_page_idx"]:
+		if "answer_page_idx" in batch and None not in batch["answer_page_idx"] and pred_answer_pages is not None:
 			ret_metric = evaluator.get_retrieval_metric(batch.get("answer_page_idx", None), pred_answer_pages)
 			batch_ret_prec = np.mean(ret_metric)
 			log_dict["Train/Batch Ret. Prec."] = batch_ret_prec
@@ -86,18 +86,27 @@ def train(model, **kwargs):
 
 	if kwargs.get("eval_start", False):
 		logger.current_epoch = -1
-		accuracy, anls, ret_prec, _, _ = evaluate(val_data_loader, model, evaluator, return_scores_by_sample=False, return_pred_answers=False, **kwargs)
+		eval_res = evaluate(val_data_loader, model, evaluator, return_scores_by_sample=False, return_answers=False, save_results=False, **kwargs)
+		accuracy = np.mean(eval_res["accuracy"])
+		anls = np.mean(eval_res["anls"])
+		retrieval_precision = np.mean(eval_res["retrieval_precision"])
+		avg_chunk_score = np.mean(eval_res["chunk_score"])
 		is_updated = evaluator.update_global_metrics(accuracy, anls, -1)
-		logger.log_val_metrics(accuracy, anls, ret_prec, update_best=is_updated)
+		logger.log_val_metrics(accuracy, anls, retrieval_precision, avg_chunk_score, update_best=is_updated)
 
 	for epoch_ix in range(epochs):
 		logger.current_epoch = epoch_ix
 		train_epoch(train_data_loader, model, optimizer, lr_scheduler, evaluator, logger, **kwargs)
-		accuracy, anls, ret_prec, _, _ = evaluate(val_data_loader, model, evaluator, return_scores_by_sample=False, return_pred_answers=False, **kwargs)
-
+		eval_res = evaluate(val_data_loader, model, evaluator, return_scores_by_sample=False, return_answers=False, save_results=False, **kwargs)
+		print(f"Epoch {epoch_ix} completed")
+		accuracy = np.mean(eval_res["accuracy"])
+		anls = np.mean(eval_res["anls"])
+		retrieval_precision = np.mean(eval_res["retrieval_precision"])
+		avg_chunk_score = np.mean(eval_res["chunk_score"])
 		is_updated = evaluator.update_global_metrics(accuracy, anls, epoch_ix)
-		logger.log_val_metrics(accuracy, anls, ret_prec, update_best=is_updated)
+		logger.log_val_metrics(accuracy, anls, retrieval_precision, avg_chunk_score, update_best=is_updated)
 		save_model(model, epoch_ix, update_best=is_updated, **kwargs)
+		print("Model saved")
 
 if __name__ == "__main__":
     # Prepare model and dataset
@@ -105,12 +114,13 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
-		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
 		"visible_devices": "1",
+		"save_name_append": "no-token"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

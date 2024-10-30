@@ -3,7 +3,7 @@ from torch import no_grad
 from transformers import AutoTokenizer, AutoModel
 from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config
-from src._model_utils import torch_no_grad, mean_pooling
+from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any, List
 from PIL import Image
@@ -16,6 +16,7 @@ class RAGVT5(torch.nn.Module):
 
 		# Load config
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
+		print(f"Loading model from {self.model_path}")
 		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
@@ -337,8 +338,8 @@ class RAGVT5(torch.nn.Module):
 			new_batch["words"] = [flatten(b) for b in top_k_words_text]  # (bs, k * n_words)
 			new_batch["boxes"] = [flatten(b) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
-			with torch.no_grad():
-				result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
+			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
+			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
 		elif self.page_retrieval == "maxconf":
 			# Generate for each top k chunk and take the answer with highest confidence
 			results = []  # (bs, 4, k)
@@ -359,9 +360,9 @@ class RAGVT5(torch.nn.Module):
 				new_batch["words"] = words  # (k, n_words)
 				new_batch["boxes"] = boxes  # (k, n_words, 4)
 				new_batch["images"] = patches  # (k, h, w, 3)
+				new_batch["answers"] = [batch["answers"][b]] * len(words)
 				# This treats k as batch size
-				with torch.no_grad():
-					result = self.generator(new_batch, return_pred_answer=return_pred_answer)
+				result = self.generator(new_batch, return_pred_answer=return_pred_answer)
 				results.append(result)
 				# Get confidence scores
 				confidences = torch.tensor(result[3])  # (k,)

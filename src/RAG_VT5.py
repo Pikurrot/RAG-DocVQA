@@ -25,11 +25,16 @@ class RAGVT5(torch.nn.Module):
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True)
 		t5_config.visual_module_config = config.get("visual_module", {})
 
-		# Load models
+		# Load generator
 		self.generator = VT5ForConditionalGeneration.from_pretrained(
 			self.model_path, config=t5_config, ignore_mismatched_sizes=True
 		)
 		self.generator.load_config(config)
+
+		# Add the chunk separator token if not already in the tokenizer
+		
+
+		# Load embedding model
 		if self.embed_model == "VT5":
 			self.embedding_dim = 768
 		elif self.embed_model == "BGE":

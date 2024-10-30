@@ -166,5 +166,7 @@ encodings/
 vectorstore*
 *.bin
 *temp.ipynb
+temp.py
 save/
 *screenlog*
+temp_data

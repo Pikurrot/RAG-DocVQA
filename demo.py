@@ -4,6 +4,7 @@ from src.build_utils import build_model, build_dataset
 from src.utils import load_config
 from src.MP_DocVQA import mpdocvqa_collate_fn
 import argparse
+import os
 
 # Function to create a dataloader generator
 def get_dataloader_generator(dataloader):
@@ -11,14 +12,21 @@ def get_dataloader_generator(dataloader):
 		yield batch
 
 # Function to process the current batch
-def process_next_batch():
+def process_next_batch(question: str):
 	try:
+		global config
 		# Fetch the next batch from the dataloader generator
 		batch = next(batch_generator)
 
 		# Inference using the model
-		outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = \
-			model.inference(batch, return_retrieval=True, chunk_num=5, chunk_size=30, overlap=0, include_surroundings=10)
+		outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = model.inference(
+			batch,
+			return_retrieval=True,
+			chunk_num=config.get("chunk_num", 10),
+			chunk_size=config.get("chunk_size", 60),
+			overlap=config.get("overlap", 10),
+			include_surroundings=config.get("include_surroundings", 0)
+		)
 
 		# Prepare original information
 		original_images = batch["images"][0]  # List of PIL images
@@ -100,8 +108,16 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
-		"embed_model": "BGE" # VT5 or BGE
+		"embed_model": "BGE", # VT5 or BGE
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"chunk_num": 10,
+		"chunk_size": 60,
+		"overlap": 10,
+		"include_surroundings": 0,
+		"visible_devices": "5",
+		# "model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_no-token/best.ckpt"
 	}
+	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	print("Building model...")

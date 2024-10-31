@@ -21,6 +21,7 @@ class RAGVT5(torch.nn.Module):
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
 		self.embed_model = config.get("embed_model", "VT5")
+		self.add_sep_token = config.get("add_sep_token", False)
 
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True)
 		t5_config.visual_module_config = config.get("visual_module", {})
@@ -31,8 +32,12 @@ class RAGVT5(torch.nn.Module):
 		)
 		self.generator.load_config(config)
 
-		# Add the chunk separator token if not already in the tokenizer
-		
+		if self.add_sep_token:
+			# Add the chunk separator token to the tokenizer if not already present
+			token_id = self.generator.tokenizer.encode("<sep>", add_special_tokens=False)
+			if not(len(token_id) == 1 and token_id[0] != self.generator.tokenizer.unk_token_id):
+				self.generator.tokenizer.add_tokens(["<sep>"])
+				self.generator.language_backbone.resize_token_embeddings(len(self.generator.tokenizer))
 
 		# Load embedding model
 		if self.embed_model == "VT5":
@@ -340,8 +345,8 @@ class RAGVT5(torch.nn.Module):
 		if self.page_retrieval in ["oracle", "concat"]:
 			# Concatenate all the top k chunks
 			new_batch["questions"] = batch["questions"].copy() # (bs,)
-			new_batch["words"] = [flatten(b) for b in top_k_words_text]  # (bs, k * n_words)
-			new_batch["boxes"] = [flatten(b) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
+			new_batch["words"] = [flatten(b, self.add_sep_token) for b in top_k_words_text]  # (bs, k * n_words)
+			new_batch["boxes"] = [flatten(b, self.add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)

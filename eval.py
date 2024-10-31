@@ -174,12 +174,14 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
-		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"batch_size": 58,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "1",
+		"visible_devices": "4",
+		"model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_no-token/best.ckpt"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
@@ -205,7 +207,7 @@ if __name__ == "__main__":
 		chunk_num=config.get("chunk_num", 10),
 		chunk_size=config.get("chunk_size", 60),
 		overlap=config.get("overlap", 10),
-		include_surroundings=config.get("include_surroundings", 10)
+		include_surroundings=config.get("include_surroundings", 0)
 	)
 	accuracy = np.mean(eval_res["accuracy"])
 	anls = np.mean(eval_res["anls"])

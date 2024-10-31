@@ -218,8 +218,20 @@ def concatenate_patches(
 			row_height = max(row_height, img.height)
 	return new_image
 
-def flatten(lst: List[list]) -> list:
-	return [item for sublist in lst for item in sublist]
+def flatten(
+		lst: List[list],
+		add_sep_token: bool = True
+	) -> list:
+	if add_sep_token:
+		# Add a separator token between the sublists
+		flat_list = []
+		for i, sublist in enumerate(lst):
+			if i > 0:
+				flat_list.append("<sep>")
+			flat_list.extend(sublist)
+		return flat_list
+	else:
+		return [item for sublist in lst for item in sublist]
 
 def get_similarity_score(a: str, b: str):
 	"""
@@ -235,7 +247,6 @@ def get_similarity_score(a: str, b: str):
 	a = a.lower()
 	b = b.lower()
 	best_score = 0.0
-	best_match = ""
 	len_b = len(b)
 	len_a = len(a)
 	
@@ -245,7 +256,6 @@ def get_similarity_score(a: str, b: str):
 		score = difflib.SequenceMatcher(None, b, substring).ratio()
 		if score > best_score:
 			best_score = score
-			best_match = substring
 			if best_score == 1.0:
 				# Exact match found, no need to continue
 				break

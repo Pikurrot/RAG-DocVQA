@@ -119,8 +119,9 @@ if __name__ == "__main__":
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "1",
-		"save_name_append": "no-token"
+		"visible_devices": "5",
+		"save_name_append": "no-token",
+		"add_sep_token": True,
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

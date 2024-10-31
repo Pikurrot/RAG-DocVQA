@@ -226,6 +226,8 @@ def flatten(
 		# Add a separator token between the sublists
 		flat_list = []
 		for i, sublist in enumerate(lst):
+			if len(sublist) == 0:
+				continue
 			if i > 0:
 				if isinstance(sublist[0], str): # for words
 					flat_list.append("<sep>")

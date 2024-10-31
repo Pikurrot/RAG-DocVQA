@@ -227,7 +227,10 @@ def flatten(
 		flat_list = []
 		for i, sublist in enumerate(lst):
 			if i > 0:
-				flat_list.append("<sep>")
+				if isinstance(sublist[0], str): # for words
+					flat_list.append("<sep>")
+				else: # for boxes
+					flat_list.append([0, 0, 0, 0])
 			flat_list.extend(sublist)
 		return flat_list
 	else:

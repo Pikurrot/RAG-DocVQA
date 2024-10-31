@@ -36,6 +36,7 @@ class RAGVT5(torch.nn.Module):
 			# Add the chunk separator token to the tokenizer if not already present
 			token_id = self.generator.tokenizer.encode("<sep>", add_special_tokens=False)
 			if not(len(token_id) == 1 and token_id[0] != self.generator.tokenizer.unk_token_id):
+				print("Adding <sep> token to the tokenizer. This model should now be fine-tuned.")
 				self.generator.tokenizer.add_tokens(["<sep>"])
 				self.generator.language_backbone.resize_token_embeddings(len(self.generator.tokenizer))
 

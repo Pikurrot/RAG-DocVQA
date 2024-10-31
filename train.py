@@ -115,13 +115,15 @@ if __name__ == "__main__":
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
-		"chunk_num": 10,
-		"chunk_size": 60,
-		"overlap": 10,
-		"include_surroundings": 0,
-		"visible_devices": "5",
-		"save_name_append": "no-token",
 		"add_sep_token": True,
+		"batch_size": 4,
+		"chunk_num": 5,
+		"chunk_size": 60,
+		"overlap": 0,
+		"include_surroundings": 60,
+		"visible_devices": "7",
+		"save_name_append": "sep-token-4",
+		"eval_start": True,
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

@@ -1,10 +1,12 @@
 import numpy as np
 import random
 import torch
+import os
 from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneration
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
 from src._model_utils import shift_tokens_right, get_generative_confidence
 from typing import Any, Tuple, Optional
+from safetensors.torch import load_file
 
 class VT5ForConditionalGeneration(PreTrainedModel):
 	config_class = CustomT5Config
@@ -15,8 +17,19 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.language_backbone = T5ForConditionalGeneration(config)
 		self.spatial_embedding = SpatialEmbeddings(config)
 		self.visual_embedding = VisualEmbeddings(config)
+
+	@classmethod
+	def from_pretrained(cls, model_path: str, **kwargs):
+		if model_path == "rubentito/vt5-base-spdocvqa":
+			model = super(VT5ForConditionalGeneration, cls).from_pretrained(model_path, **kwargs)
+		else:
+			safetensors_path = os.path.join(model_path, "model.safetensors")
+			config = kwargs.get("config", None)
+			model = cls(config)
+			model.load_state_dict(load_file(safetensors_path), strict=False)
 		# Initialize weights and apply final processing
-		self.post_init()
+		model.post_init()
+		return model
 
 	def load_config(self, config: dict):
 		# Load extra config

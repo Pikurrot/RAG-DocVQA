@@ -176,13 +176,13 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
 		"add_sep_token": True,
-		"batch_size": 58,
+		"batch_size": 50,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
 		"visible_devices": "3",
-		# "model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_no-token/best.ckpt"
+		"model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__8.ckpt"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
@@ -193,7 +193,7 @@ if __name__ == "__main__":
 	model.to(config["device"])
 	print("Building dataset...")
 	data_size = 1.0
-	dataset = build_dataset(config, split="val", size=data_size)
+	dataset = build_dataset(config, split="test", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model
@@ -204,7 +204,7 @@ if __name__ == "__main__":
 		model, evaluator,
 		return_scores_by_sample=True,
 		return_answers=True,
-		save_results=False,
+		save_results=True,
 		chunk_num=config.get("chunk_num", 10),
 		chunk_size=config.get("chunk_size", 60),
 		overlap=config.get("overlap", 10),

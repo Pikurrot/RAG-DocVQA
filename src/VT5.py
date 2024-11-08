@@ -116,7 +116,6 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		visual_embedding = visual_embedding
 		visual_emb_mask = visual_emb_mask
 
-		# input_embeds = semantic_embedding
 		input_embeds = torch.add(semantic_embedding, spatial_embedding)
 		input_embeds = torch.cat([input_embeds, visual_embedding], dim=1)  # Concatenate semantic + visual embeddings TODO: Provide visual bounding boxes.
 		tensor_attention_mask = torch.cat([tensor_attention_mask, visual_emb_mask], dim=1)

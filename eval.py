@@ -122,7 +122,9 @@ def evaluate(
 
 		if save_results:
 			for i in range(bs):
-				if pred_answer_pages is None or len(pred_answer_pages) == 0 or len(pred_answer_pages[i]) == 0:
+				if isinstance(pred_answer_pages, int):
+					answer_page = pred_answer_pages
+				elif pred_answer_pages is None or len(pred_answer_pages) == 0 or len(pred_answer_pages[i]) == 0:
 					answer_page = 0
 				elif isinstance(pred_answer_pages[i], int):
 					answer_page = pred_answer_pages[i]
@@ -182,7 +184,7 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		"visible_devices": "3",
-		"model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__8.ckpt"
+		# "model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__8.ckpt"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

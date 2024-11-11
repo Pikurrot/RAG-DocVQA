@@ -19,7 +19,7 @@ class Evaluator:
 	def get_metrics(
 			self,
 			gt_answers: List[List[str]],
-			preds: List[str],
+			preds: Union[List[str], List[List[str]]],
 			answer_types: List[str]=None
 	) -> dict:
 		answer_types = answer_types if answer_types is not None else ["string" for batch_idx in range(len(gt_answers))]
@@ -29,12 +29,21 @@ class Evaluator:
 		# Compute metrics for each batch element
 		for b in range(len(preds)):
 			gt = [self._preprocess_str(gt_elm) for gt_elm in gt_answers[b]]
-			if preds[b] is None:
-				preds[b] = ""
-			pred = self._preprocess_str(preds[b])
-
-			batch_accuracy.append(self._calculate_accuracy(gt, pred, answer_types[b]))
-			batch_anls.append(self._calculate_anls(gt, pred, answer_types[b]))
+			if isinstance(preds[b], list): # in case of Anyconf
+				pred = [self._preprocess_str(pred_elm) for pred_elm in preds[b]]
+				batch_accuracy_max = 0
+				batch_anls_max = 0
+				for pred_i in pred:
+					i_accuracy = self._calculate_accuracy(gt, pred_i, answer_types[b])
+					i_anls = self._calculate_anls(gt, pred_i, answer_types[b])
+					batch_accuracy_max = max(batch_accuracy_max, i_accuracy)
+					batch_anls_max = max(batch_anls_max, i_anls)
+				batch_accuracy.append(batch_accuracy_max)
+				batch_anls.append(batch_anls_max)
+			else: # others
+				pred = self._preprocess_str(preds[b])
+				batch_accuracy.append(self._calculate_accuracy(gt, pred, answer_types[b]))
+				batch_anls.append(self._calculate_anls(gt, pred, answer_types[b]))
 
 		return {"accuracy": batch_accuracy, "anls": batch_anls}
 
@@ -90,6 +99,8 @@ class Evaluator:
 			return False
 
 	def _preprocess_str(self, string: str) -> str:
+		if string is None:
+			return ""
 		if not self.case_sensitive:
 			string = string.lower()
 		return string.strip()

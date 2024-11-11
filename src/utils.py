@@ -82,17 +82,17 @@ def check_config(config: dict) -> bool:
 	if model_name not in ["hi-layoutlmv3", "hi-lt5", "hi-vt5"] and page_retrieval == "custom":
 		raise ValueError('"Custom" retrieval is not allowed for {:}'.format(model_name))
 
-	elif model_name in ["hi-layoutlmv3, hilt5", "hi-lt5", "hivt5", "hi-vt5"] and page_retrieval in ["concat", "logits", "maxconf"]:
+	elif model_name in ["hi-layoutlmv3, hilt5", "hi-lt5", "hivt5", "hi-vt5"] and page_retrieval in ["concat", "logits", "maxconf", "anyconf"]:
 		raise ValueError('Hierarchical model {:} can"t run on {:} retrieval type. Only "oracle" and "custom" are allowed.'.format(model_name, page_retrieval))
 
 	if page_retrieval == "custom" and model_name not in ["hi-layoutlmv3", "hi-lt5", "hi-vt5"]:
 		raise ValueError('"Custom" page retrieval only allowed for Heirarchical methods ("hi-layoutlmv3", "hi-lt5", "hi-vt5").')
 
-	elif page_retrieval in ["concat", "logits", "maxconf"] and config.get("max_pages") is not None:
+	elif page_retrieval in ["concat", "logits", "maxconf", "anyconf"] and config.get("max_pages") is not None:
 		print("WARNING - Max pages ({:}) value is ignored for {:} page-retrieval setting.".format(config.get("max_pages"), page_retrieval))
 
 	elif page_retrieval == "none" and config["dataset_name"] not in ["SP-DocVQA"]:
-		print('Page retrieval can"t be none for dataset "{:s}". This is intended only for single page datasets. Please specify in the method config file the "page_retrieval" setup to one of the following: [oracle, concat, logits, maxconf, custom] '.format(config["dataset_name"]))
+		print('Page retrieval can"t be none for dataset "{:s}". This is intended only for single page datasets. Please specify in the method config file the "page_retrieval" setup to one of the following: [oracle, concat, logits, maxconf, anyconf, custom] '.format(config["dataset_name"]))
 
 	if "save_dir" in config:
 		if not config["save_dir"].endswith("/"):

@@ -176,7 +176,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
-		"page_retrieval": "Maxconf", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"page_retrieval": "Anyconf", # Oracle / Concat / Logits / Maxconf / Anyconf / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 32,
 		"chunk_num": 10,
@@ -195,7 +195,7 @@ if __name__ == "__main__":
 	model.to(config["device"])
 	print("Building dataset...")
 	data_size = 1.0
-	dataset = build_dataset(config, split="test", size=data_size)
+	dataset = build_dataset(config, split="val", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model
@@ -206,7 +206,7 @@ if __name__ == "__main__":
 		model, evaluator,
 		return_scores_by_sample=True,
 		return_answers=True,
-		save_results=True,
+		save_results=False,
 		chunk_num=config.get("chunk_num", 10),
 		chunk_size=config.get("chunk_size", 60),
 		overlap=config.get("overlap", 10),

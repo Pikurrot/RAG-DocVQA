@@ -12,7 +12,7 @@ class MPDocVQA(Dataset):
 			self,
 			imdb_dir: str,
 			images_dir: str,
-			page_retrieval: Literal["oracle", "concat", "logits", "maxconf", "custom"],
+			page_retrieval: Literal["oracle", "concat", "logits", "maxconf", "anyconf", "custom"],
 			split: Literal["train", "val", "test"],
 			kwargs: dict = {}
 	):
@@ -26,7 +26,7 @@ class MPDocVQA(Dataset):
 			self.imdb = self.imdb[int(size[0]*len(self.imdb)):int(size[1]*len(self.imdb))]
 
 		self.page_retrieval = page_retrieval.lower()
-		assert(self.page_retrieval in ["oracle", "concat", "logits", "maxconf", "custom"])
+		assert(self.page_retrieval in ["oracle", "concat", "logits", "maxconf", "anyconf", "custom"])
 
 		self.max_answers = 2
 		self.images_dir = images_dir
@@ -82,7 +82,7 @@ class MPDocVQA(Dataset):
 			
 			start_idxs, end_idxs = self._get_start_end_idx(context[0], answers)
 		
-		elif self.page_retrieval in ["concat", "logits", "maxconf"]:
+		elif self.page_retrieval in ["concat", "logits", "maxconf", "anyconf"]:
 			context = []
 			for page_ix in range(record["imdb_doc_pages"]):
 				context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))

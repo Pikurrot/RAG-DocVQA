@@ -351,8 +351,8 @@ class RAGVT5(torch.nn.Module):
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
-		elif self.page_retrieval == "maxconf":
-			# Generate for each top k chunk and take the answer with highest confidence
+		elif self.page_retrieval in ("maxconf", "anyconf"):
+			# Generate for each top k chunk
 			results = []  # (bs, 4, k)
 			max_confidence_indices = []
 			for b in range(bs):  # iterate over batch
@@ -379,7 +379,8 @@ class RAGVT5(torch.nn.Module):
 				confidences = torch.tensor(result[3])  # (k,)
 				max_confidence_index = torch.argmax(confidences).item()
 				max_confidence_indices.append(max_confidence_index)
-			# Get the answer with highest confidence
+
+			# Format results from (bs, 4, k) to (4, bs) for Maxconf and (4, bs, k) for Anyconf
 			final_results = [[] for _ in range(4)]  # [[], [], [], []]
 			for b in range(bs):
 				result = results[b]
@@ -393,7 +394,12 @@ class RAGVT5(torch.nn.Module):
 						if i == 0: # not interested in loss, logits, etc.
 							final_results[i].append(None)
 						else:
-							final_results[i].append(result[i][conf_idx])
+							if self.page_retrieval == "maxconf":
+								# Take the answer with highest confidence
+								final_results[i].append(result[i][conf_idx])
+							elif self.page_retrieval == "anyconf":
+								# Take all answers
+								final_results[i].append(result[i])
 					else:
 						final_results[i].append(None)
 			result = tuple(final_results)
@@ -417,7 +423,7 @@ class RAGVT5(torch.nn.Module):
 					"input_boxes": new_batch["boxes"],
 					"input_patches": new_batch["images"]
 				})
-			elif self.page_retrieval == "maxconf":
+			elif self.page_retrieval in ["maxconf", "anyconf"]:
 				retrieval.update({
 					"max_confidence_indices": max_confidence_indices,
 					"input_words": [flatten(b) for b in top_k_words_text],

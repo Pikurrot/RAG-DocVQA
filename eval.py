@@ -176,14 +176,14 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
-		"add_sep_token": True,
-		"batch_size": 50,
+		"page_retrieval": "Maxconf", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"add_sep_token": False,
+		"batch_size": 32,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "3",
+		"visible_devices": "0",
 		# "model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__8.ckpt"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]

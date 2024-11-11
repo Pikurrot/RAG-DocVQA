@@ -390,7 +390,10 @@ class RAGVT5(torch.nn.Module):
 				conf_idx = max_confidence_indices[b]
 				for i in range(4):
 					if result[i] is not None:
-						final_results[i].append(result[i][conf_idx])
+						if i == 0: # not interested in loss, logits, etc.
+							final_results[i].append(None)
+						else:
+							final_results[i].append(result[i][conf_idx])
 					else:
 						final_results[i].append(None)
 			result = tuple(final_results)

@@ -176,14 +176,14 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
-		"page_retrieval": "MaxConf", # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)
+		"page_retrieval": "WeightMajorPage", # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 32, # 50 Concat, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 50, # 50 Concat, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "2",
+		"visible_devices": "4",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]

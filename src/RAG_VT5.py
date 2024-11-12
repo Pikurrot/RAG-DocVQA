@@ -322,7 +322,7 @@ class RAGVT5(torch.nn.Module):
 		if self.page_retrieval == "oracle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
 
-		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes
+		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities
 
 	def forward(
 			self,
@@ -336,7 +336,7 @@ class RAGVT5(torch.nn.Module):
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
-		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes = \
+		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities = \
 			self.retrieve(batch, chunk_num, chunk_size, overlap, True, include_surroundings)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
@@ -417,6 +417,34 @@ class RAGVT5(torch.nn.Module):
 					else:
 						final_results[i].append(None)
 			result = tuple(final_results)
+		elif self.page_retrieval in ["majorpage", "weightmajorpage"]:
+			# Prepare the data for the page corresponding to the majority voted chunks
+			# e.g. if chunk pages are [0, 0, 1, 2, 2] and weights are [0.5, 0.5, 0.2, 0.3, 0.3]
+			# then the majority voted page is 0
+			if self.page_retrieval == "majorpage":
+				weights = [np.ones_like(similarities[b]) for b in range(bs)]
+			else:
+				weights = [similarities[b].cpu().numpy() for b in range(bs)]
+			weights = [w / sum(w) for w in weights]  # Normalize weights
+
+			# Prepare new batch
+			major_page_indices = []
+			for b in range(bs):
+				page_indices_b = top_k_page_indices[b]
+				weights_b = weights[b]
+				unique_pages = list(set(page_indices_b))
+				page_weights = {page: 0 for page in unique_pages}
+				for page, weight in zip(page_indices_b, weights_b):
+					page_weights[page] += weight
+				major_page_indices.append(max(page_weights, key=page_weights.get))
+			new_batch["questions"] = batch["questions"].copy()  # (bs,)
+			new_batch["words"] = [batch["words"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)
+			new_batch["boxes"] = [batch["boxes"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words, 4)
+			new_batch["images"] = [batch["images"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, h, w, 3)
+			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
+			# This treats bs as batch size
+			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)			
+
 		generation_time = time() - start_time
 
 		if return_retrieval:

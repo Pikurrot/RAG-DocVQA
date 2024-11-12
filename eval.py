@@ -178,7 +178,7 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5
 		"page_retrieval": "WeightMajorPage", # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 50, # 50 Concat, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 50, # 50 Concat / MajorPage / WeightMajorPage, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"overlap": 10,

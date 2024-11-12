@@ -422,7 +422,7 @@ class RAGVT5(torch.nn.Module):
 			# e.g. if chunk pages are [0, 0, 1, 2, 2] and weights are [0.5, 0.5, 0.2, 0.3, 0.3]
 			# then the majority voted page is 0
 			if self.page_retrieval == "majorpage":
-				weights = [np.ones_like(similarities[b]) for b in range(bs)]
+				weights = [np.ones(len(similarities[b])) for b in range(bs)]
 			else:
 				weights = [similarities[b].cpu().numpy() for b in range(bs)]
 			weights = [w / sum(w) for w in weights]  # Normalize weights
@@ -436,6 +436,9 @@ class RAGVT5(torch.nn.Module):
 				page_weights = {page: 0 for page in unique_pages}
 				for page, weight in zip(page_indices_b, weights_b):
 					page_weights[page] += weight
+				if len(page_weights) == 0:
+					major_page_indices.append(0)
+					continue
 				major_page_indices.append(max(page_weights, key=page_weights.get))
 			new_batch["questions"] = batch["questions"].copy()  # (bs,)
 			new_batch["words"] = [batch["words"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)

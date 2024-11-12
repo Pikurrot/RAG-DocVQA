@@ -292,15 +292,15 @@ class RAGVT5(torch.nn.Module):
 					included_word_indices[page_idx].update(new_word_indices)
 
 					# Collect words and boxes
-					words_text = [page_words_text[page_idx][idx] for idx in new_word_indices]
+					words_text = [page_words_text[page_idx][idx] for idx in new_word_indices] # (n_words,)
 					words_boxes = [page_words_boxes[page_idx][idx] for idx in new_word_indices]
 
 					# Append to batch results
-					batch_top_k_words_text.append(words_text)
+					batch_top_k_words_text.append(words_text) # (k, n_words)
 					batch_top_k_words_boxes.append(words_boxes)
 
 				# Append batch data to the final results
-				top_k_words_text.append(batch_top_k_words_text)
+				top_k_words_text.append(batch_top_k_words_text) # (bs, k, n_words)
 				top_k_words_boxes.append(batch_top_k_words_boxes)
 
 		# Get image patches
@@ -344,29 +344,43 @@ class RAGVT5(torch.nn.Module):
 		start_time = time()
 		new_batch = {}
 		if self.page_retrieval in ["oracle", "concat"]:
-			# Concatenate all the top k chunks
+			# Concatenate all the top k chunks (in case of oracle, just 1 chunk, the whole page)
 			new_batch["questions"] = batch["questions"].copy() # (bs,)
 			new_batch["words"] = [flatten(b, self.add_sep_token) for b in top_k_words_text]  # (bs, k * n_words)
 			new_batch["boxes"] = [flatten(b, self.add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
-		elif self.page_retrieval in ("maxconf", "anyconf"):
+		elif self.page_retrieval in ("maxconf", "anyconf", "maxconfpage", "anyconfpage"):
 			# Generate for each top k chunk
 			results = []  # (bs, 4, k)
 			max_confidence_indices = []
 			for b in range(bs):  # iterate over batch
+
 				words, boxes, patches = [], [], []
-				for i in range(len(top_k_words_text[b])):
-					if top_k_words_text[b][i] != []:
-						words.append(top_k_words_text[b][i])
-						boxes.append(top_k_words_boxes[b][i])
-						patches.append(top_k_patches[b][i])
+				if self.page_retrieval in ["maxconf", "anyconf"]:
+					# Prepare the data for each chunk
+					for i in range(len(top_k_words_text[b])):
+						# Filter out empty chunks
+						if top_k_words_text[b][i] != []:
+							words.append(top_k_words_text[b][i])
+							boxes.append(top_k_words_boxes[b][i])
+							patches.append(top_k_patches[b][i])
+				elif self.page_retrieval in ["maxconfpage", "anyconfpage"]:
+					# Prepare the data for the page corresponding to each chunk
+					for i in range(len(top_k_page_indices[b])):
+						page_idx = top_k_page_indices[b][i]
+						words.append(batch["words"][b][page_idx])
+						boxes.append(batch["boxes"][b][page_idx])
+						patches.append(batch["images"][b][page_idx])
+
 				if len(words) == 0:
 					# If there are no words, append None and continue
 					results.append(None)
 					max_confidence_indices.append(None)
 					continue
+
+				# Prepare new batch
 				new_batch["questions"] = [batch["questions"][b]] * len(words)  # (k,)
 				new_batch["words"] = words  # (k, n_words)
 				new_batch["boxes"] = boxes  # (k, n_words, 4)
@@ -394,10 +408,10 @@ class RAGVT5(torch.nn.Module):
 						if i == 0: # not interested in loss, logits, etc.
 							final_results[i].append(None)
 						else:
-							if self.page_retrieval == "maxconf":
+							if self.page_retrieval in ("maxconf", "maxconfpage"):
 								# Take the answer with highest confidence
 								final_results[i].append(result[i][conf_idx])
-							elif self.page_retrieval == "anyconf":
+							elif self.page_retrieval in ("anyconf", "anyconfpage"):
 								# Take all answers
 								final_results[i].append(result[i])
 					else:

@@ -114,7 +114,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
+		"page_retrieval": "Concat",
 		"add_sep_token": True,
 		"batch_size": 4,
 		"chunk_num": 5,

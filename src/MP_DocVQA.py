@@ -12,7 +12,7 @@ class MPDocVQA(Dataset):
 			self,
 			imdb_dir: str,
 			images_dir: str,
-			page_retrieval: Literal["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage"],
+			page_retrieval: Literal["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage", "anyconforacle"],
 			split: Literal["train", "val", "test"],
 			kwargs: dict = {}
 	):
@@ -26,7 +26,7 @@ class MPDocVQA(Dataset):
 			self.imdb = self.imdb[int(size[0]*len(self.imdb)):int(size[1]*len(self.imdb))]
 
 		self.page_retrieval = page_retrieval.lower()
-		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage"])
+		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage", "anyconforacle"])
 
 		self.max_answers = 2
 		self.images_dir = images_dir
@@ -67,7 +67,7 @@ class MPDocVQA(Dataset):
 		answer_page_idx = record.get("answer_page_idx", 0)
 		num_pages = record["imdb_doc_pages"]
 
-		if self.page_retrieval == "oracle":
+		if self.page_retrieval in ["oracle", "anyconforacle"]:
 			context = [" ".join([word.lower() for word in record["ocr_tokens"][answer_page_idx]])]
 			context_page_corresp = None
 			num_pages = 1

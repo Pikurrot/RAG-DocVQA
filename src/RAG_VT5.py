@@ -152,7 +152,7 @@ class RAGVT5(torch.nn.Module):
 						batch_words_text_chunks.append(page_words)
 						batch_words_box_chunks.append(page_boxes)
 				else:
-					# Else, split the page words and boxes into chunks
+					# Else, split the page words and boxes into chunks (AnyConfOracle is included here)
 					for i in range(0, len(page_words), chunk_size - overlap):
 						chunk_words = page_words[i:i + chunk_size]
 						chunk_text = " ".join(chunk_words)
@@ -351,7 +351,7 @@ class RAGVT5(torch.nn.Module):
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
-		elif self.page_retrieval in ("maxconf", "anyconf", "maxconfpage", "anyconfpage"):
+		elif self.page_retrieval in ("maxconf", "anyconf", "maxconfpage", "anyconfpage", "anyconforacle"):
 			# Generate for each top k chunk
 			results = []  # (bs, 4, k)
 			max_confidence_indices = []
@@ -411,7 +411,7 @@ class RAGVT5(torch.nn.Module):
 							if self.page_retrieval in ("maxconf", "maxconfpage"):
 								# Take the answer with highest confidence
 								final_results[i].append(result[i][conf_idx])
-							elif self.page_retrieval in ("anyconf", "anyconfpage"):
+							elif self.page_retrieval in ("anyconf", "anyconfpage", "anyconforacle"):
 								# Take all answers
 								final_results[i].append(result[i])
 					else:
@@ -468,7 +468,7 @@ class RAGVT5(torch.nn.Module):
 					"input_boxes": new_batch["boxes"],
 					"input_patches": new_batch["images"]
 				})
-			elif self.page_retrieval in ["maxconf", "anyconf"]:
+			elif self.page_retrieval in ["maxconf", "anyconf", "maxconfpage", "anyconfpage", "anyconforacle"]:
 				retrieval.update({
 					"max_confidence_indices": max_confidence_indices,
 					"input_words": [flatten(b) for b in top_k_words_text],

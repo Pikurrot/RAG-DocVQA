@@ -369,7 +369,10 @@ class RAGVT5(torch.nn.Module):
 				elif self.page_retrieval in ["maxconfpage", "anyconfpage", "anyconforacle"]:
 					# Prepare the data for the page corresponding to each chunk
 					for i in range(len(top_k_page_indices[b])):
-						page_idx = top_k_page_indices[b][i]
+						if self.page_retrieval == "anyconforacle":
+							page_idx = 0
+						else:
+							page_idx = top_k_page_indices[b][i]
 						words.append(batch["words"][b][page_idx])
 						boxes.append(batch["boxes"][b][page_idx])
 						patches.append(batch["images"][b][page_idx])

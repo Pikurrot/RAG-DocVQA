@@ -319,8 +319,10 @@ class RAGVT5(torch.nn.Module):
 				batch_patches.append(patch)
 			top_k_patches.append(batch_patches)
 
-		if self.page_retrieval in ["oracle", "anyconforacle"]:
+		if self.page_retrieval == "oracle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
+		elif self.page_retrieval == "anyconforacle":
+			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
 
 		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities
 
@@ -358,7 +360,7 @@ class RAGVT5(torch.nn.Module):
 			for b in range(bs):  # iterate over batch
 
 				words, boxes, patches = [], [], []
-				if self.page_retrieval in ["maxconf", "anyconf"]:
+				if self.page_retrieval in ["maxconf", "anyconf", "anyconforacle"]:
 					# Prepare the data for each chunk
 					for i in range(len(top_k_words_text[b])):
 						# Filter out empty chunks
@@ -366,13 +368,10 @@ class RAGVT5(torch.nn.Module):
 							words.append(top_k_words_text[b][i])
 							boxes.append(top_k_words_boxes[b][i])
 							patches.append(top_k_patches[b][i])
-				elif self.page_retrieval in ["maxconfpage", "anyconfpage", "anyconforacle"]:
+				elif self.page_retrieval in ["maxconfpage", "anyconfpage"]:
 					# Prepare the data for the page corresponding to each chunk
 					for i in range(len(top_k_page_indices[b])):
-						if self.page_retrieval == "anyconforacle":
-							page_idx = 0
-						else:
-							page_idx = top_k_page_indices[b][i]
+						page_idx = top_k_page_indices[b][i]
 						words.append(batch["words"][b][page_idx])
 						boxes.append(batch["boxes"][b][page_idx])
 						patches.append(batch["images"][b][page_idx])

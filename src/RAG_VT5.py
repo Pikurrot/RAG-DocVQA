@@ -430,7 +430,7 @@ class RAGVT5(torch.nn.Module):
 			weights = [w / sum(w) for w in weights]  # Normalize weights
 
 			# Prepare new batch
-			major_page_indices = []
+			major_page_indices = [] # (bs,)
 			for b in range(bs):
 				page_indices_b = top_k_page_indices[b]
 				weights_b = weights[b]
@@ -458,7 +458,9 @@ class RAGVT5(torch.nn.Module):
 				"text": top_k_text,
 				"boxes": top_k_boxes,
 				"patches": top_k_patches,
-				"page_indices": top_k_page_indices,
+				"page_indices":
+					top_k_page_indices if self.page_retrieval not in ["majorpage", "weightmajorpage"]
+					else major_page_indices,
 				"words_text": top_k_words_text,
 				"words_boxes": top_k_words_boxes,
 				"retrieval_time": retrieval_time,

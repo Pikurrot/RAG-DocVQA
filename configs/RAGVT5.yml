@@ -1,6 +1,7 @@
 save_dir: save/
 model_name: RAGVT5
 model_weights: rubentito/vt5-base-spdocvqa
+cache_dir: /data3fast/users/elopez/models
 max_source_length: 512
 device: cuda
 data_parallel: False

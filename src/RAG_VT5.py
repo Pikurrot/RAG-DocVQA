@@ -1,6 +1,5 @@
 import torch
 from torch import no_grad
-from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config
@@ -47,21 +46,19 @@ class RAGVT5(torch.nn.Module):
 		if self.embed_model == "VT5":
 			self.embedding_dim = 768
 		elif self.embed_model == "BGE":
-			self.bge_tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-small-en-v1.5', cache_dir=self.cache_dir)
-			self.bge_model = AutoModel.from_pretrained('BAAI/bge-small-en-v1.5', cache_dir=self.cache_dir)
-			self.bge_model.eval()
+			self.bge_model = SentenceTransformer("BAAI/bge-small-en-v1.5", cache_folder=self.cache_dir)
 			self.embedding_dim = 384
 		elif self.embed_model == "BGE-M3":
-			self.bgem3_model = SentenceTransformer("BAAI/bge-m3", cache_folder=self.cache_dir)
+			self.bge_model = SentenceTransformer("BAAI/bge-m3", cache_folder=self.cache_dir)
 			self.embedding_dim = 1024
 		elif self.embed_model == "BGE-reranker":
-			self.bger_model = SentenceTransformer("BAAI/bge-reranker-v2-m3", cache_folder=self.cache_dir)
+			self.bge_model = SentenceTransformer("BAAI/bge-reranker-v2-m3", cache_folder=self.cache_dir)
 			self.embedding_dim = 1024
 
 	def to(self, device: Any):
 		self.device = device
 		self.generator.to(device)
-		if self.embed_model == "BGE":
+		if self.embed_model != "VT5":
 			self.bge_model.to(device)
 
 	def eval(self):
@@ -84,20 +81,8 @@ class RAGVT5(torch.nn.Module):
 			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
 			text_tokens_embeddings = self.generator.language_backbone.shared(input_ids)
 			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
-		elif self.embed_model == "BGE":
-			encoded_input = self.bge_tokenizer(
-				text,
-				return_tensors="pt",
-				padding=True,
-				truncation=True
-			)
-			encoded_input = {k: v.to(self.device) for k, v in encoded_input.items()}
-			text_tokens_embeddings = self.bge_model(**encoded_input)[0][:,0]
-			text_embeddings = torch.nn.functional.normalize(text_tokens_embeddings, p=2, dim=-1)
-		elif self.embed_model == "BGE-M3":
-			text_embeddings = self.bgem3_model.encode(text, convert_to_tensor=True)
-		elif self.embed_model == "BGE-reranker":
-			text_embeddings = self.bger_model.encode(text, convert_to_tensor=True)
+		else:
+			text_embeddings = self.bge_model.encode(text, convert_to_tensor=True)
 		return text_embeddings
 
 	def get_similarities(

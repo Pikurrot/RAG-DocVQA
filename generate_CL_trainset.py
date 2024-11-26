@@ -46,18 +46,21 @@ def build_CL_trainset(
 			include_surroundings=kwargs["include_surroundings"]
 		)
 		pred_answer_pages = retrieval["page_indices"]
+		questions = batch["questions"] # (bs,)
+		top_k_chunks = retrieval["text"] # (bs, k)
 
 		# Compute metrics (accuracy, ANLS)
 		metrics = []
 		for b in range(bs):
 			preds = pred_answers[b]
+			if preds is None:
+				metrics.append({"accuracy": [0]*len(top_k_chunks[b]), "anls": [0]*len(top_k_chunks[b])})
+				continue
 			gt_answers = [batch["answers"][b]]*len(preds)
 			answer_types = batch.get("answer_type", None)[b] if batch.get("answer_type", None) is not None else None
 			metrics.append(evaluator.get_metrics(gt_answers, preds, answer_types))
 		
 		# Prepare the pairs
-		questions = batch["questions"] # (bs,)
-		top_k_chunks = retrieval["text"] # (bs, k)
 		chunks_anls = [metrics[b]["anls"] for b in range(bs)] # (bs, k)
 		good_chunks = []
 		# bad_chunks = []

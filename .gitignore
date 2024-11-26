@@ -170,3 +170,4 @@ temp.py
 save/
 *screenlog*
 temp_data
+wandb/

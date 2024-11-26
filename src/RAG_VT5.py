@@ -16,7 +16,9 @@ class RAGVT5(torch.nn.Module):
 
 		# Load config
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
+		self.embed_path = config.get("embed_weights", None)
 		print(f"Loading model from {self.model_path}")
+		print(f"Loading embedding model from {self.embed_path}")
 		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
@@ -45,15 +47,18 @@ class RAGVT5(torch.nn.Module):
 		# Load embedding model
 		if self.embed_model == "VT5":
 			self.embedding_dim = 768
-		elif self.embed_model == "BGE":
-			self.bge_model = SentenceTransformer("BAAI/bge-small-en-v1.5", cache_folder=self.cache_dir)
-			self.embedding_dim = 384
-		elif self.embed_model == "BGE-M3":
-			self.bge_model = SentenceTransformer("BAAI/bge-m3", cache_folder=self.cache_dir)
-			self.embedding_dim = 1024
-		elif self.embed_model == "BGE-reranker":
-			self.bge_model = SentenceTransformer("BAAI/bge-reranker-v2-m3", cache_folder=self.cache_dir)
-			self.embedding_dim = 1024
+		else:
+			if self.embed_model == "BGE":
+				if self.embed_path is None:
+					self.embed_path = "BAAI/bge-small-en-v1.5"
+				self.embedding_dim = 384
+			elif self.embed_model == "BGE-M3":
+				self.embed_path = "BAAI/bge-m3"
+				self.embedding_dim = 1024
+			elif self.embed_model == "BGE-reranker":
+				self.embed_path = "BAAI/bge-reranker-v2-m3"
+				self.embedding_dim = 1024
+			self.bge_model = SentenceTransformer(self.embed_path, cache_folder=self.cache_dir)
 
 	def to(self, device: Any):
 		self.device = device

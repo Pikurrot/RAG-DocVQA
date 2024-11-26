@@ -230,6 +230,7 @@ if __name__ == "__main__":
 	save_data = {
 		"Model": config["model_name"],
 		"Model_weights": config["model_weights"],
+		"Embed_weights": config["embed_weights"],
 		"Dataset": config["dataset_name"],
 		"Page retrieval": config.get("page_retrieval", "-").capitalize(),
 		"embed_model": config.get("embed_model", "-"),

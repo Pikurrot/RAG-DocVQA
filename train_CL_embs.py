@@ -2,12 +2,42 @@ import os
 import torch
 import sqlite3
 from datasets import Dataset
+import torch.nn as nn
+import torch.nn.functional as F
 from sentence_transformers import (
     SentenceTransformer,
     SentenceTransformerTrainer,
     SentenceTransformerTrainingArguments,
     losses,
 )
+
+
+class CLIPStyleLoss(nn.Module):
+	def __init__(self, model, temperature=0.07):
+		super(CLIPStyleLoss, self).__init__()
+		self.model = model
+		self.temperature = temperature
+		self.cross_entropy_loss = nn.CrossEntropyLoss()
+
+	def forward(self, sentence_features, labels=None):
+		embeddings_a = self.model(sentence_features[0])['sentence_embedding']
+		embeddings_b = self.model(sentence_features[1])['sentence_embedding']
+
+		# Normalize embeddings
+		embeddings_a = F.normalize(embeddings_a, p=2, dim=1)
+		embeddings_b = F.normalize(embeddings_b, p=2, dim=1)
+
+		# Compute cosine similarity
+		logits = torch.matmul(embeddings_a, embeddings_b.t()) / self.temperature
+
+		# Create labels
+		labels = torch.arange(len(logits)).to(logits.device)
+
+		# Compute loss
+		loss_a = self.cross_entropy_loss(logits, labels)
+		loss_b = self.cross_entropy_loss(logits.t(), labels)
+		loss = (loss_a + loss_b) / 2
+		return loss
 
 
 def train_CL_embs(
@@ -17,7 +47,8 @@ def train_CL_embs(
 ):
 	print("Training the embeddings for CL...")
 	model.train()
-	criterion = losses.MultipleNegativesRankingLoss(model)
+	# criterion = losses.MultipleNegativesRankingLoss(model)
+	criterion = CLIPStyleLoss(model)
 	output_dir = kwargs.get("output_dir")
 	
 	args = SentenceTransformerTrainingArguments(
@@ -55,6 +86,6 @@ if __name__ == "__main__":
 	)
 
 	# Train the embeddings
-	train_CL_embs(embed_model, dataset, output_dir="/data3fast/users/elopez/models/bge-finetuned")
+	train_CL_embs(embed_model, dataset, output_dir="/data3fast/users/elopez/models/bge-finetuned-2")
 	conn.close()
 	print("Done!")

@@ -183,9 +183,9 @@ if __name__ == "__main__":
 		"chunk_size": 60,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "5",
+		"visible_devices": "1",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820"
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

@@ -21,7 +21,7 @@ class LayoutModel(torch.nn.Module):
 		self.model = BeitForSemanticSegmentation.from_pretrained(self.model_path, cache_dir=self.cache_dir)
 		self.model.to(self.device)
 
-	def containment_ratio(
+	def _containment_ratio(
 			self,
 			small_box: List[int],
 			large_box: List[int]
@@ -37,7 +37,7 @@ class LayoutModel(torch.nn.Module):
 		small_area = (small_box[2] - small_box[0]) * (small_box[3] - small_box[1])
 		return inter_area / small_area if small_area > 0 else 0
 
-	def filter_detections(
+	def _filter_detections(
 			self,
 			boxes: List[List[int]],
 			labels: List[int],
@@ -79,7 +79,7 @@ class LayoutModel(torch.nn.Module):
 
 			for j, box_b in enumerate(normalized_boxes):
 				if i != j and areas[j] > areas[i]:  # Only compare to larger boxes
-					ratio = self.containment_ratio(box_a, box_b)
+					ratio = self._containment_ratio(box_a, box_b)
 					max_cont = max(max_cont, ratio)
 					if ratio >= containment_threshold:
 						is_overlapping = True
@@ -106,7 +106,7 @@ class LayoutModel(torch.nn.Module):
 		]
 		return denormalized_boxes, filtered_labels
 
-	def detect_bboxes(masks: np.ndarray):
+	def _detect_bboxes(masks: np.ndarray):
 		"""
 		A simple bounding box detection function
 		"""
@@ -127,7 +127,7 @@ class LayoutModel(torch.nn.Module):
 	def forward(self, images: List[Image.Image]) -> List[dict]:
 		with torch.inference_mode():
 			# Preprocess images
-			inputs = self.processor(images, return_tensors="pt")
+			inputs = self.processor(images, return_tensors="pt", padding=False)
 			inputs.to(self.device)
 
 			# Forward pass
@@ -152,13 +152,13 @@ class LayoutModel(torch.nn.Module):
 				for ii in range(1, len(self.model.config.label2id)):
 					mm = img_seg == ii
 					if mm.sum() > 0:
-						bbx = self.detect_bboxes(mm.numpy())
+						bbx = self._detect_bboxes(mm.numpy())
 						boxes_.extend(bbx)
 						labels.extend([ii]*len(bbx))
 			else:
 				mm = img_seg > 0
 				if mm.sum() > 0:
-					bbx = self.detect_bboxes(mm.numpy())
+					bbx = self._detect_bboxes(mm.numpy())
 					boxes_.extend(bbx)
 					labels.extend([1]*len(bbx))
 			bbox_pred.append(dict(boxes=boxes_, labels=labels))
@@ -166,7 +166,7 @@ class LayoutModel(torch.nn.Module):
 		# Filter bounding boxes
 		bbox_pred_filtered = []
 		for i, (image, img_preds) in enumerate(zip(images, bbox_pred)):
-			filtered_boxes, filtered_labels = self.filter_detections(
+			filtered_boxes, filtered_labels = self._filter_detections(
 				img_preds["boxes"], img_preds["labels"], image.size[::-1], min_area=0.005, containment_threshold=0.6, condition = "or"
 			)
 			# normalize boxes to be between 0 and 1

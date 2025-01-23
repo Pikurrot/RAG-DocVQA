@@ -176,7 +176,4 @@ class LayoutModel(torch.nn.Module):
 			]
 			bbox_pred_filtered.append(dict(boxes=filtered_boxes, labels=filtered_labels))
 
-		# sort by x and y
-		bbox_pred_filtered = sorted(bbox_pred_filtered, key=lambda x: (x["boxes"][0], x["boxes"][1]))
-
 		return bbox_pred_filtered

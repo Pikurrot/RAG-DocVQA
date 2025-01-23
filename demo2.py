@@ -2,8 +2,24 @@ import gradio as gr
 from src.build_utils import build_model
 from src.utils import load_config
 from src.process_pdf import load_pdf
+from PIL import ImageDraw
 import argparse
 import os
+
+layout_map = {
+	0: 'Background',
+	1: 'Caption',
+	2: 'Footnote',
+	3: 'Formula',
+	4:'List-item',
+	5: 'Page-footer',
+	6: 'Page-header',
+	7:'Picture',
+	8: 'Section-header',
+	9: 'Table',
+	10: 'Text',
+	11: 'Title'
+}
 
 # Function to create a dataloader generator
 def get_dataloader_generator(dataloader):
@@ -22,6 +38,7 @@ def process_next_batch(question: str):
 			return_retrieval=True,
 			chunk_num=config.get("chunk_num", 10),
 			chunk_size=config.get("chunk_size", 60),
+			chunk_size_tol=config.get("chunk_size_tol", 15),
 			overlap=config.get("overlap", 10),
 			include_surroundings=config.get("include_surroundings", 0)
 		)
@@ -33,8 +50,8 @@ def process_next_batch(question: str):
 
 		# Prepare retrieved information
 		retrieved_patches = retrieval.get("patches", [[]])[0]  # List of PIL images
-		retrieved_text_list = retrieval.get("input_words", [[]])[0]  # List of strings
-		retrieved_text = " ".join(retrieved_text_list)
+		retrieved_text_list = retrieval.get("text", [[]])[0]  # List of strings
+		retrieved_text = "\n\n".join([f"Chunk {i+1}:\n{text}" for i, text in enumerate(retrieved_text_list)])
 
 		retrieved_page_indices_list = retrieval.get("page_indices", [[]])[0]  # List of integers
 		if model.page_retrieval == "concat":
@@ -45,17 +62,37 @@ def process_next_batch(question: str):
 				for i, idx in enumerate(retrieved_page_indices_list)
 			])
 
+		# Draw layout boxes on original images
+		images_with_boxes = original_images.copy()
+		retrieved_layout_info = retrieval.get("layout_info", [[]])[0]  # List of dictionaries
+		if retrieved_layout_info:
+			for i, layout_info in enumerate(retrieved_layout_info):
+				boxes = layout_info.get("boxes", [])
+				labels = layout_info.get("labels", [])
+				for j, box in enumerate(boxes):
+					resized_box = [
+						box[0] * original_images[i].width,
+						box[1] * original_images[i].height,
+						box[2] * original_images[i].width,
+						box[3] * original_images[i].height
+					]
+					img = images_with_boxes[i]
+					draw = ImageDraw.Draw(img)
+					draw.rectangle(resized_box, outline="red", width=3)
+					draw.text(resized_box[:2], layout_map[labels[j]], fill="red")
+
 		# Model outputs
 		predicted_answer = pred_answers[0]
 		predicted_confidence = pred_answers_conf[0]
 
-		return (original_images, original_text, retrieved_patches, retrieved_text, predicted_answer, predicted_confidence, retrieved_page_indices)
+		return (images_with_boxes, original_text, retrieved_patches, retrieved_text, predicted_answer, predicted_confidence, retrieved_page_indices)
 
 	except StopIteration:
 		return ([], "No more batches available.", [], "No more retrieved text.", "", "", 0, "", 0.0, "")
 
 # Function to process a new PDF document
 def process_pdf_document(pdf, page):
+	gr.Info("Wait for the document to be processed...")
 	global batch
 	record = load_pdf(pdf.name)
 	
@@ -133,15 +170,18 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
-		"embed_model": "BGE", # VT5 or BGE
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
-		"add_sep_token": True,
+		"embed_model": "BGE",
+		"page_retrieval": "Concat",
+		"add_sep_token": False,
+		#"batch_size": 32,
+		"layout_batch_size": 4,
 		"chunk_num": 10,
 		"chunk_size": 60,
+		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "5",
-		# "model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_no-token/best.ckpt"
+		"visible_devices": "0",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

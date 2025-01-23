@@ -176,7 +176,7 @@ class RAGVT5(torch.nn.Module):
 						# Make chunks inside the layout boxes
 						page_layout_boxes = batch_layout_boxes[p]
 						for layout_box in page_layout_boxes:
-							# Find words inside the layout box (TODO: use IoU)
+							# Find words inside the layout box
 							words_inside = []
 							boxes_inside = []
 							for word, box in zip(page_words, page_boxes):
@@ -255,29 +255,37 @@ class RAGVT5(torch.nn.Module):
 
 		# Get layout boxes
 		if self.layout_model is not None:
-			layout_info = [] # (bs, n_pages, n_boxes, 4)
-			# Flatten all input for optimal batch division 
-			flatten_images = [] # (bs*n_pages,)
+			flatten_images = []  # (bs*n_pages,)
 			for b in range(bs):
 				page_images = images[b]
 				flatten_images.extend(page_images)
+			
 			# Divide into batches of layout_bs
-			new_batches = [] # (bs_l, n_pages_l)
+			new_batches = []  # (bs_l, n_pages_l)
 			for i in range(0, len(flatten_images), self.layout_bs):
 				batch_images = flatten_images[i:i + self.layout_bs]
 				new_batches.append(batch_images)
+			
 			# Process batches and flatten again
-			flatten_layout_boxes = [] # (bs*n_pages, n_boxes, 4)
+			flatten_layout_boxes = []  # (bs*n_pages, n_boxes, 4)
 			for batch_images in new_batches:
 				batch_layout_boxes = self.layout_model(batch_images)
 				flatten_layout_boxes.extend(batch_layout_boxes)
-			# Divide into batches of original bs again
+			
+			# Reshape flatten_layout_boxes back to (bs, n_pages, n_boxes, 4)
+			layout_info = [] # (bs, n_pages, n_boxes, 4)
+			index = 0
 			for b in range(bs):
+				page_layouts = []
 				for p in range(len(images[b])):
-					layout_info.append(flatten_layout_boxes.pop(0))
-			layout_boxes = [layout_info[b]["boxes"] for b in range(bs)]
+					page_layouts.append(flatten_layout_boxes[index])
+					index += 1
+				layout_info.append(page_layouts)
+			
+			# Extract layout_boxes from layout_info
+			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(images[b]))] for b in range(bs)]
 		else:
-			layout_info, layout_boxes = None, None
+			layout_info, layout_boxes = [[]], None
 
 		# Get chunks
 		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks = \
@@ -412,7 +420,7 @@ class RAGVT5(torch.nn.Module):
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
-		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_boxes = \
+		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_info = \
 			self.retrieve(batch, chunk_num, chunk_size, overlap, True, include_surroundings)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
@@ -539,7 +547,7 @@ class RAGVT5(torch.nn.Module):
 				"words_boxes": top_k_words_boxes,
 				"retrieval_time": retrieval_time,
 				"generation_time": generation_time,
-				"layout_boxes": layout_boxes
+				"layout_info": layout_info
 			}
 			if self.page_retrieval in ["oracle", "concat"]:
 				retrieval.update({

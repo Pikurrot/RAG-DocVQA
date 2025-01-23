@@ -106,7 +106,7 @@ class LayoutModel(torch.nn.Module):
 		]
 		return denormalized_boxes, filtered_labels
 
-	def _detect_bboxes(masks: np.ndarray):
+	def _detect_bboxes(self, masks: np.ndarray):
 		"""
 		A simple bounding box detection function
 		"""

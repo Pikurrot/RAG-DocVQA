@@ -185,6 +185,7 @@ class RAGVT5(torch.nn.Module):
 					stats["chunk_size_dist"][len(chunk_words)] += 1
 					n_chunks += 1
 				prev_chunk_size = this_chunk_size
+			return n_chunks
 
 		for b, (batch_words, batch_boxes) in enumerate(zip(words, boxes)):
 			if layout_boxes:

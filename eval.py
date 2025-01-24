@@ -6,6 +6,7 @@ import numpy as np
 import gc
 import torch
 from tqdm import tqdm
+from collections import Counter
 from torch.utils.data import DataLoader
 from src.MP_DocVQA import mpdocvqa_collate_fn
 from src.metrics import Evaluator
@@ -44,6 +45,7 @@ def evaluate(
 	retrieval_time = 0
 	generation_time = 0
 	results = []
+	retrieval_stats = {}
 
 	all_pred_answers = []
 	model.eval()
@@ -60,7 +62,6 @@ def evaluate(
 				return_pred_answer=True
 			)
 			retrieval = {
-				"layout_time": 0,
 				"retrieval_time": 0,
 				"generation_time": time.time() - start_time
 			}
@@ -117,7 +118,7 @@ def evaluate(
 			total_ret_prec += sum(ret_metric)
 			total_chunk_scores += sum(ret_eval["chunk_score"])
 		load_time += sum(batch["load_time"])
-		layout_time += retrieval["layout_time"]
+		layout_time += retrieval["stats"]["layout_time"]	
 		retrieval_time += retrieval["retrieval_time"]
 		generation_time += retrieval["generation_time"]
 
@@ -139,6 +140,14 @@ def evaluate(
 					"answer": pred_answers[i],
 					"answer_page": answer_page
 				})
+
+		# Accumulate retrieval stats
+		del retrieval["stats"]["layout_time"]
+		if b == 0:
+			retrieval_stats = retrieval["stats"]
+		else:
+			for key in retrieval_stats:
+				retrieval_stats[key] += retrieval["stats"][key]
 		
 		# Free memory
 		del pred_answers, pred_answer_pages, pred_answers_conf, metrics, ret_metric, ret_eval, batch
@@ -173,6 +182,7 @@ def evaluate(
 		"total_layout_time": layout_time,
 		"total_retrieval_time": retrieval_time,
 		"total_generation_time": generation_time,
+		"retrieval_stats": retrieval_stats,
 		"results": results
 	}
 
@@ -186,7 +196,7 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 40, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 8,
+		"layout_batch_size": 6,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -239,6 +249,22 @@ if __name__ == "__main__":
 	total_layout_time = time_stamp_to_hhmmss(eval_res["total_layout_time"], string=True)
 	total_retrieval_time = time_stamp_to_hhmmss(eval_res["total_retrieval_time"], string=True)
 	total_generation_time = time_stamp_to_hhmmss(eval_res["total_generation_time"], string=True)
+
+	for key, stat in eval_res["retrieval_stats"].items():
+		if isinstance(stat, Counter):
+			mean = np.mean(list(stat.elements()))
+			std = np.std(list(stat.elements()))
+			min_val = min(stat.elements())
+			max_val = max(stat.elements())
+
+			eval_res["retrieval_stats"][key] = {
+				"mean": mean,
+				"std": std,
+				"min": min_val,
+				"max": max_val,
+				"distribution": dict(stat)
+			}
+
 	save_data = {
 		"Model": config["model_name"],
 		"Model_weights": config["model_weights"],
@@ -264,6 +290,7 @@ if __name__ == "__main__":
 		"Total retrieval time (layout)": f"{total_layout_time} ({eval_res['total_layout_time']/inf_time_f*100:.2f}%)",
 		"Total retrieval time": f"{total_retrieval_time} ({eval_res['total_retrieval_time']/inf_time_f*100:.2f}%)",
 		"Total generation time": f"{total_generation_time} ({eval_res['total_generation_time']/inf_time_f*100:.2f}%)",
+		"Retrieval stats": eval_res["retrieval_stats"],
 		"Scores by samples": eval_res["scores_by_samples"]
 	}
 	experiment_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

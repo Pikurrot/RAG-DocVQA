@@ -68,6 +68,7 @@ def evaluate(
 				return_retrieval=True,
 				chunk_num=kwargs.get("chunk_num", 5),
 				chunk_size=kwargs.get("chunk_size", 30),
+				chunk_size_tol=kwargs.get("chunk_size_tol", 0.15),
 				overlap=kwargs.get("overlap", 0),
 				include_surroundings=kwargs.get("include_surroundings", 10)
 			)
@@ -176,10 +177,10 @@ if __name__ == "__main__":
 		"model": "RAGVT5", # RAGVT5, HiVT5
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"page_retrieval": "AnyConfOracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 32, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 4,
+		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"layout_batch_size": 8,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -187,7 +188,8 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		"visible_devices": "1",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820"
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

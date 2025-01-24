@@ -160,7 +160,7 @@ class RAGVT5(torch.nn.Module):
 				chunk_boxes = _boxes[i:i + chunk_size]
 				if 	i > 0 and \
 					_p == p_lst[-1] and \
-					len(words_lst[-1]) + (len(chunk_words) - overlap) <= chunk_size + chunk_size_tol * chunk_size:
+					len(words_lst[-1]) + (len(chunk_words) - overlap) <= chunk_size * (1+chunk_size_tol):
 					# if previous+this chunk in same page/layout is small, merge them
 					words_lst[-1].extend(chunk_words[overlap:])
 					boxes_lst[-1].extend(chunk_boxes[overlap:])
@@ -194,10 +194,10 @@ class RAGVT5(torch.nn.Module):
 				else:
 					# Else, if layout, Make chunks inside the layout boxes
 					page_layout_boxes = batch_layout_boxes[p]
-					layout_words = []
-					layout_boxes = []
+					layout_words_text = []
+					layout_words_boxes = []
 					layout_indices = []
-					for l, layout_box in enumerate(page_layout_boxes):
+					for lb, layout_box in enumerate(page_layout_boxes):
 						# Find words inside the layout box
 						words_inside = []
 						boxes_inside = []
@@ -208,12 +208,12 @@ class RAGVT5(torch.nn.Module):
 								boxes_inside.append(box)
 						# Split the words inside the layout box into chunks
 						make_chunks(
-							words_inside, boxes_inside, l,
-							layout_words, layout_boxes, layout_indices
+							words_inside, boxes_inside, lb,
+							layout_words_text, layout_words_boxes, layout_indices
 						)
-					batch_page_indices.extend([p] * len(layout_words))
-					batch_words_text_chunks.extend(layout_words)
-					batch_words_box_chunks.extend(layout_boxes)
+					batch_page_indices.extend([p] * len(layout_words_text))
+					batch_words_text_chunks.extend(layout_words_text)
+					batch_words_box_chunks.extend(layout_words_boxes)
 			
 			# Join words and boxes for each chunk
 			for chunk_words, chunk_boxes in zip(batch_words_text_chunks, batch_words_box_chunks):
@@ -305,7 +305,6 @@ class RAGVT5(torch.nn.Module):
 			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(images[b]))] for b in range(bs)]
 		else:
 			layout_info, layout_boxes = [[]], None
-		print(len(layout_boxes), len(layout_boxes[0]), len(layout_boxes[0][0]), len(layout_boxes[0][0][0]))
 
 		# Get chunks
 		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks = \

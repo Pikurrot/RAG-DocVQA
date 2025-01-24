@@ -81,7 +81,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			for word, box in zip(words[batch_idx], boxes[batch_idx]):
 				tokenized_word = self.tokenizer(word).input_ids[:-1] # Tokenize the word and ignore eos_token
 				input_ids.extend(tokenized_word)
-				input_boxes.extend([box]*len(tokenized_word))  # Repeat the box for each token corresponding to the word.
+				input_boxes.extend((np.array([box]*len(tokenized_word))*1000).tolist())  # Repeat the box for each token corresponding to the word.
 
 			batch_input_ids.append(input_ids[:self.max_source_length-1] + [self.tokenizer.eos_token_id])  # Append the eos_token at the end.
 			batch_input_boxes.append(np.concatenate([input_boxes[:self.max_source_length-1],  np.array([eos_box])]))  # Append a bounding box corresponding to the eos_token.
@@ -93,9 +93,10 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		tensor_attention_mask = torch.zeros([bs, longest_seq], dtype=torch.long)
 
 		for batch_idx in range(bs):
-			tensor_input_ids[batch_idx, :len(batch_input_ids[batch_idx])] = torch.LongTensor(batch_input_ids[batch_idx])
-			tensor_boxes[batch_idx, :len(batch_input_boxes[batch_idx])] = torch.from_numpy(batch_input_boxes[batch_idx][:len(batch_input_boxes[batch_idx])])
-			tensor_attention_mask[batch_idx, :len(batch_input_ids[batch_idx])] = 1
+			seq_len = len(batch_input_ids[batch_idx])
+			tensor_input_ids[batch_idx, :seq_len] = torch.LongTensor(batch_input_ids[batch_idx])
+			tensor_boxes[batch_idx, :seq_len] = torch.from_numpy(batch_input_boxes[batch_idx][:seq_len])
+			tensor_attention_mask[batch_idx, :seq_len] = 1
 
 		"""
 		context = [(" ").join(doc_words) for doc_words in words]

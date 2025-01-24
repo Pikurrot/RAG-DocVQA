@@ -40,6 +40,7 @@ def evaluate(
 		total_ret_prec = 0
 		total_chunk_scores = 0
 	load_time = 0
+	layout_time = 0
 	retrieval_time = 0
 	generation_time = 0
 	results = []
@@ -59,6 +60,7 @@ def evaluate(
 				return_pred_answer=True
 			)
 			retrieval = {
+				"layout_time": 0,
 				"retrieval_time": 0,
 				"generation_time": time.time() - start_time
 			}
@@ -115,6 +117,7 @@ def evaluate(
 			total_ret_prec += sum(ret_metric)
 			total_chunk_scores += sum(ret_eval["chunk_score"])
 		load_time += sum(batch["load_time"])
+		layout_time += retrieval["layout_time"]
 		retrieval_time += retrieval["retrieval_time"]
 		generation_time += retrieval["generation_time"]
 
@@ -151,6 +154,7 @@ def evaluate(
 		total_chunk_scores = total_chunk_scores/len(data_loader.dataset)
 		scores_by_samples = []
 	avg_load_time = load_time/len(data_loader)
+	avg_layout_time = layout_time/len(data_loader)
 	avg_retrieval_time = retrieval_time/len(data_loader)
 	avg_generation_time = generation_time/len(data_loader)
 
@@ -162,9 +166,11 @@ def evaluate(
 		"all_pred_answers": all_pred_answers,
 		"scores_by_samples": scores_by_samples,
 		"avg_load_time": avg_load_time,
+		"avg_layout_time": avg_layout_time,
 		"avg_retrieval_time": avg_retrieval_time,
 		"avg_generation_time": avg_generation_time,
 		"total_load_time": load_time,
+		"total_layout_time": layout_time,
 		"total_retrieval_time": retrieval_time,
 		"total_generation_time": generation_time,
 		"results": results
@@ -179,7 +185,7 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 40, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 8,
 		"chunk_num": 10,
 		"chunk_size": 60,
@@ -226,9 +232,11 @@ if __name__ == "__main__":
 	inf_time_f = time.time() - start_time
 	inf_time = time_stamp_to_hhmmss(inf_time_f, string=True)
 	avg_load_time = time_stamp_to_hhmmss(eval_res["avg_load_time"], string=True)
+	avg_layout_time = time_stamp_to_hhmmss(eval_res["avg_layout_time"], string=True)
 	avg_retrieval_time = time_stamp_to_hhmmss(eval_res["avg_retrieval_time"], string=True)
 	avg_generation_time = time_stamp_to_hhmmss(eval_res["avg_generation_time"], string=True)
 	total_load_time = time_stamp_to_hhmmss(eval_res["total_load_time"], string=True)
+	total_layout_time = time_stamp_to_hhmmss(eval_res["total_layout_time"], string=True)
 	total_retrieval_time = time_stamp_to_hhmmss(eval_res["total_retrieval_time"], string=True)
 	total_generation_time = time_stamp_to_hhmmss(eval_res["total_generation_time"], string=True)
 	save_data = {
@@ -249,9 +257,11 @@ if __name__ == "__main__":
 		"Dataset size": f"{data_size*100}%",
 		"Inference time": inf_time,
 		"Avg load time": avg_load_time,
+		"Avg retrieval time (layout)": avg_layout_time,
 		"Avg retrieval time": avg_retrieval_time,
 		"Avg generation time": avg_generation_time,
 		"Total load time": f"{total_load_time} ({eval_res['total_load_time']/inf_time_f*100:.2f}%)",
+		"Total retrieval time (layout)": f"{total_layout_time} ({eval_res['total_layout_time']/inf_time_f*100:.2f}%)",
 		"Total retrieval time": f"{total_retrieval_time} ({eval_res['total_retrieval_time']/inf_time_f*100:.2f}%)",
 		"Total generation time": f"{total_generation_time} ({eval_res['total_generation_time']/inf_time_f*100:.2f}%)",
 		"Scores by samples": eval_res["scores_by_samples"]

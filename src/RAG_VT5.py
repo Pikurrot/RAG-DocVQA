@@ -271,6 +271,7 @@ class RAGVT5(torch.nn.Module):
 		bs = len(questions)
 
 		# Get layout boxes
+		start_time = time()
 		if self.layout_model is not None:
 			flatten_images = []  # (bs*n_pages,)
 			for b in range(bs):
@@ -305,6 +306,7 @@ class RAGVT5(torch.nn.Module):
 			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(images[b]))] for b in range(bs)]
 		else:
 			layout_info, layout_boxes = [[]], None
+		layout_time = time() - start_time
 
 		# Get chunks
 		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks = \
@@ -425,7 +427,7 @@ class RAGVT5(torch.nn.Module):
 		elif self.page_retrieval == "anyconforacle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
 
-		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_info
+		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_info, layout_time
 
 	def forward(
 			self,
@@ -440,8 +442,17 @@ class RAGVT5(torch.nn.Module):
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
-		top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_info = \
-			self.retrieve(batch, chunk_num, chunk_size, chunk_size_tol, overlap, True, include_surroundings)
+		(
+			top_k_text,
+			top_k_boxes,
+			top_k_patches,
+			top_k_page_indices,
+			top_k_words_text,
+			top_k_words_boxes,
+			similarities,
+			layout_info,
+			layout_time
+		) = self.retrieve(batch, chunk_num, chunk_size, chunk_size_tol, overlap, True, include_surroundings)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
 		# Generate
@@ -565,6 +576,7 @@ class RAGVT5(torch.nn.Module):
 					else major_page_indices,
 				"words_text": top_k_words_text,
 				"words_boxes": top_k_words_boxes,
+				"layout_time": layout_time,
 				"retrieval_time": retrieval_time,
 				"generation_time": generation_time,
 				"layout_info": layout_info

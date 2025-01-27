@@ -44,7 +44,8 @@ class LayoutModel(torch.nn.Module):
 			image_size: Tuple[int, int],
 			min_area: float=0.001,
 			containment_threshold: float=0.5,
-			condition: str="or"
+			condition: str="or",
+			aspect_power: float=1.0
 	):
 		"""
 		Filters bounding boxes based on normalized size and overlap with condition.
@@ -56,6 +57,7 @@ class LayoutModel(torch.nn.Module):
 		- min_area: Minimum normalized area (relative to image size) for a box to be valid.
 		- containment_threshold: threshold to filter overlapping small boxes.
 		- condition: "or", "and", "small", "overlap" for combining small area and overlap conditions.
+		- aspect_power: Power to apply to the (width/height) aspect ratio.
 
 		Returns:
 		- Filtered boxes and labels.
@@ -64,21 +66,27 @@ class LayoutModel(torch.nn.Module):
 		h, w = image_size
 		filtered_boxes, filtered_labels = [], []
 
-		# Normalize boxes and compute normalized areas
+		# Normalize boxes and compute weighted normalized areas
 		normalized_boxes = [
 			[box[0] / w, box[1] / h, box[2] / w, box[3] / h] for box in boxes
 		]
-		areas = [
-			(box[2] - box[0]) * (box[3] - box[1]) for box in normalized_boxes
-		]
+		def weighted_area(nb):
+			width = nb[2] - nb[0]
+			height = nb[3] - nb[1]
+			if height == 0:
+				return 0
+			return (width * height) * ((width / height) ** aspect_power)
+
+		weighted_areas = [weighted_area(nb) for nb in normalized_boxes]
+		params_to_show = []
 
 		for i, box_a in enumerate(normalized_boxes):
-			is_small = areas[i] < min_area
+			is_small = weighted_areas[i] < min_area
 			is_overlapping = False
 			max_cont = 0
 
 			for j, box_b in enumerate(normalized_boxes):
-				if i != j and areas[j] > areas[i]:  # Only compare to larger boxes
+				if i != j and weighted_areas[j] > weighted_areas[i]:  # Only compare to larger boxes
 					ratio = self._containment_ratio(box_a, box_b)
 					max_cont = max(max_cont, ratio)
 					if ratio >= containment_threshold:
@@ -98,6 +106,7 @@ class LayoutModel(torch.nn.Module):
 			if not should_filter:
 				filtered_boxes.append(box_a)
 				filtered_labels.append(labels[i])
+				params_to_show.append(weighted_areas[i])
 
 		# Denormalize the final boxes back to pixel coordinates
 		denormalized_boxes = [
@@ -147,27 +156,28 @@ class LayoutModel(torch.nn.Module):
 		bbox_pred = []
 		for img_seg in segmentation:
 			img_seg = img_seg.cpu()
-			boxes_, labels = [], []
+			boxes_, labels_ = [], []
+			mm = img_seg > 0
+			if mm.sum() > 0:
+				bbx = self._detect_bboxes(mm.numpy())
+				boxes_.extend(bbx)
 			if self.distinguish_labels:
-				for ii in range(1, len(self.model.config.label2id)):
-					mm = img_seg == ii
-					if mm.sum() > 0:
-						bbx = self._detect_bboxes(mm.numpy())
-						boxes_.extend(bbx)
-						labels.extend([ii]*len(bbx))
+				# Majority voting
+				for box in boxes_:
+					xmin, ymin, xmax, ymax = box
+					segment_crop = img_seg[ymin:ymax, xmin:xmax]
+					label = np.argmax(np.bincount(segment_crop.flatten()))
+					labels_.append(label)
 			else:
-				mm = img_seg > 0
-				if mm.sum() > 0:
-					bbx = self._detect_bboxes(mm.numpy())
-					boxes_.extend(bbx)
-					labels.extend([1]*len(bbx))
-			bbox_pred.append(dict(boxes=boxes_, labels=labels))
+				labels_.extend([1]*len(bbx))
+			bbox_pred.append(dict(boxes=boxes_, labels=labels_))
 
 		# Filter bounding boxes
 		bbox_pred_filtered = []
 		for i, (image, img_preds) in enumerate(zip(images, bbox_pred)):
 			filtered_boxes, filtered_labels = self._filter_detections(
-				img_preds["boxes"], img_preds["labels"], image.size[::-1], min_area=0.005, containment_threshold=0.6, condition = "or"
+				img_preds["boxes"], img_preds["labels"], image.size[::-1],
+				min_area=0.02, containment_threshold=0.6, condition = "or", aspect_power=1.0
 			)
 			# normalize boxes to be between 0 and 1
 			filtered_boxes = [

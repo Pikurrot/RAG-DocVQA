@@ -239,7 +239,7 @@ class RAGVT5(torch.nn.Module):
 					layout_words_boxes = [] # (n_chunks, n_words, 4)
 					layout_indices = [] # (n_chunks,)
 					page_n_chunks = 0
-					for lb, (layout_box, layout_label) in enumerate(page_layout_boxes, page_layout_labels):
+					for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
 						# Find words inside the layout box
 						words_inside = []
 						boxes_inside = []

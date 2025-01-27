@@ -2,7 +2,7 @@ import torch
 from torch import no_grad
 from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
-from src.LayoutModel import LayoutModel
+from src.LayoutModel import LayoutModel, layout_map
 from src ._modules import CustomT5Config
 from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
@@ -126,18 +126,18 @@ class RAGVT5(torch.nn.Module):
 			self,
 			words: list, # (bs, n_pages, n_words)
 			boxes: list, # (bs, n_pages, n_words, 4)
-			layout_boxes: list = None, # (bs, n_pages, n_boxes, 4)
+			layout_info: list = None, # (bs, n_pages)
 			chunk_size: int = 30,
 			chunk_size_tol: float = 0.15,
 			overlap: int = 0,
 			return_words: bool = False
-	) -> Tuple[list, list ,list, list, list]: # (bs, n_chunks), (bs, n_chunks, 4), (bs, n_chunks),
-											# (bs, n_chunks, n_words), (bs, n_chunks, n_words, 4)
+	) -> Tuple[list, list ,list, list, list, list, dict]: # (bs, n_chunks), (bs, n_chunks, 4), (bs, n_chunks),
+									# (bs, n_chunks, n_words), (bs, n_chunks, n_words, 4), (bs, n_chunks), dict
 		"""
 		Converts words and boxes to chunks
 			:param words: list of words
 			:param boxes: list of boxes
-			:param layout_boxes: list of layout boxes
+			:param layout_info: list of layout information
 			:param chunk_size: size of the chunk in words
 			:param overlap: overlap of words between chunks
 			:param return_words: if True, return also the ocr and boxes for individual words
@@ -148,12 +148,22 @@ class RAGVT5(torch.nn.Module):
 		assert 0 <= chunk_size_tol <= 1, "chunk_size_tol should be a float between 0 and 1."
 		assert overlap >= 0, "overlap should be a non-negative integer."
 		assert overlap < chunk_size, "overlap should be less than chunk_size."
+		bs = len(words)
 
-		text_chunks = []
-		boxes_chunks = []
-		page_indices = []
-		words_text_chunks = []
-		words_boxes_chunks = []
+		# Extract layout_boxes and layout_labels from layout_info
+		if layout_info != [[]]:
+			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes, 4)
+			layout_labels = [[layout_info[b][p]["labels"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
+		else:
+			layout_boxes = None
+			layout_labels = None
+
+		text_chunks = [] # (bs, n_chunks)
+		boxes_chunks = [] # (bs, n_chunks, 4)
+		page_indices = [] # (bs, n_chunks)
+		words_text_chunks = [] # (bs, n_chunks, n_words)
+		words_boxes_chunks = [] # (bs, n_chunks, n_words, 4)
+		layout_labels_chunks = [] # (bs, n_chunks)
 		stats = {
 			"chunk_size_dist": Counter(),
 			"n_chunks_per_layout_dist": Counter(),
@@ -187,42 +197,49 @@ class RAGVT5(torch.nn.Module):
 				prev_chunk_size = this_chunk_size
 			return n_chunks
 
-		for b, (batch_words, batch_boxes) in enumerate(zip(words, boxes)):
+		for b, (batch_words, batch_boxes) in enumerate(zip(words, boxes)): # (n_pages, n_words), (n_pages, n_words, 4)
 			if layout_boxes:
 				batch_layout_boxes = layout_boxes[b]
+				batch_layout_labels = layout_labels[b]
 			else:
 				batch_layout_boxes = None
-			batch_text_chunks = []
-			batch_box_chunks = []
-			batch_page_indices = []
-			batch_words_text_chunks = []
-			batch_words_box_chunks = []
+				batch_layout_labels = None
+			batch_text_chunks = [] # (n_chunks,)
+			batch_box_chunks = [] # (n_chunks, 4)
+			batch_page_indices = [] # (n_chunks,)
+			batch_words_text_chunks = [] # (n_chunks, n_words)
+			batch_words_box_chunks = [] # (n_chunks, n_words, 4)
+			batch_layout_labels_chunks = []
 			batch_n_chunks = 0
-			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)):
+			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
+				page_boxes = page_boxes.tolist()
 				if self.page_retrieval == "oracle":
 					# If oracle, take the whole page as a chunk
 					batch_page_indices.append(p)
 					batch_words_text_chunks.append(page_words)
 					batch_words_box_chunks.append(page_boxes)
+					batch_layout_labels_chunks.append(10) # 10 = "text"
 					stats["chunk_size_dist"][len(page_words)] += 1
 					stats["n_chunks_per_page_dist"][1] += 1
-					stats["n_chunks_per_doc_dist"][1] += 1					
+					stats["n_chunks_per_doc_dist"][1] += 1
 				elif not (batch_layout_boxes and batch_layout_boxes[p]): # (AnyConfOracle is included here)
 					# Else, if no layout, make chunks inside the page
 					page_n_chunks = make_chunks(
 						page_words, page_boxes, p,
 						batch_words_text_chunks, batch_words_box_chunks, batch_page_indices
 					)
+					batch_layout_labels_chunks.extend([10] * page_n_chunks) # 10 = "text"
 					batch_n_chunks += page_n_chunks
 					stats["n_chunks_per_page_dist"][page_n_chunks] += 1
 				else:
-					# Else, if layout, Make chunks inside the layout boxes
+					# Else, if layout, make chunks inside the layout boxes
 					page_layout_boxes = batch_layout_boxes[p]
-					layout_words_text = []
-					layout_words_boxes = []
-					layout_indices = []
+					page_layout_labels = batch_layout_labels[p]
+					layout_words_text = [] # (n_chunks, n_words)
+					layout_words_boxes = [] # (n_chunks, n_words, 4)
+					layout_indices = [] # (n_chunks,)
 					page_n_chunks = 0
-					for lb, layout_box in enumerate(page_layout_boxes):
+					for lb, (layout_box, layout_label) in enumerate(page_layout_boxes, page_layout_labels):
 						# Find words inside the layout box
 						words_inside = []
 						boxes_inside = []
@@ -237,6 +254,7 @@ class RAGVT5(torch.nn.Module):
 							layout_words_text, layout_words_boxes, layout_indices
 						)
 						page_n_chunks += layout_n_chunks
+						batch_layout_labels_chunks.extend([layout_label] * layout_n_chunks)
 						stats["n_chunks_per_layout_dist"][layout_n_chunks] += 1
 					batch_page_indices.extend([p] * len(layout_words_text))
 					batch_words_text_chunks.extend(layout_words_text)
@@ -266,8 +284,9 @@ class RAGVT5(torch.nn.Module):
 			page_indices.append(batch_page_indices)
 			words_text_chunks.append(batch_words_text_chunks)
 			words_boxes_chunks.append(batch_words_box_chunks)
+			layout_labels_chunks.append(batch_layout_labels_chunks)
 			stats["n_chunks_per_doc_dist"][batch_n_chunks] += 1
-		return text_chunks, boxes_chunks, page_indices, words_text_chunks, words_boxes_chunks, stats
+		return text_chunks, boxes_chunks, page_indices, words_text_chunks, words_boxes_chunks, layout_labels_chunks, stats
 
 	@no_grad()
 	def retrieve(
@@ -333,22 +352,21 @@ class RAGVT5(torch.nn.Module):
 					page_layouts.append(flatten_layout_boxes[index])
 					index += 1
 				layout_info.append(page_layouts)
-			
-			# Extract layout_boxes from layout_info
-			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(images[b]))] for b in range(bs)]
 		else:
-			layout_info, layout_boxes = [[]], None
+			layout_info = [[]]
 
 		# Get chunks
-		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks, chunk_stats = \
-			self.get_chunks(words, boxes, layout_boxes, chunk_size, chunk_size_tol, overlap, return_words)
+		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks, layout_labels_chunks, chunk_stats = \
+			self.get_chunks(words, boxes, layout_info, chunk_size, chunk_size_tol, overlap, return_words)
 
 		# Compute some statistics
 		stats["layout_time"] = time() - start_time
-		if layout_boxes:
+		if layout_info != [[]]:
 			stats["n_layouts_per_page_dist"] = Counter()
 			stats["layouts_size_w_dist"] = Counter()
 			stats["layouts_size_h_dist"] = Counter()
+			# init from 0 layout map values
+			stats["layout_labels_dist"] = {layout_map[label]: 0 for label in layout_map}
 			for b in range(bs):
 				for p in range(len(layout_info[b])):
 					n_layouts = len(layout_info[b][p]["boxes"])
@@ -358,6 +376,8 @@ class RAGVT5(torch.nn.Module):
 						h = box[3] - box[1]
 						stats["layouts_size_w_dist"][w] += 1
 						stats["layouts_size_h_dist"][h] += 1
+					for label in layout_info[b][p]["labels"]:
+						stats["layout_labels_dist"][layout_map[label]] += 1
 		stats.update(chunk_stats)
 
 		# Get text embeddings

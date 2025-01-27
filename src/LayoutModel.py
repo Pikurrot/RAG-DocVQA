@@ -6,6 +6,21 @@ from PIL import Image
 import numpy as np
 import cv2
 
+layout_map = {
+	0: 'Background',
+	1: 'Caption',
+	2: 'Footnote',
+	3: 'Formula',
+	4:'List-item',
+	5: 'Page-footer',
+	6: 'Page-header',
+	7:'Picture',
+	8: 'Section-header',
+	9: 'Table',
+	10: 'Text',
+	11: 'Title'
+}
+
 class LayoutModel(torch.nn.Module):
 	def __init__(self, config: dict):
 		super(LayoutModel, self).__init__()

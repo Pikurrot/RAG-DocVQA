@@ -321,7 +321,7 @@ class RAGVT5(torch.nn.Module):
 
 		stats = {}
 
-		# Get layout boxes
+		# Get layout boxes and labels
 		start_time = time()
 		if self.layout_model is not None:
 			flatten_images = []  # (bs*n_pages,)
@@ -354,13 +354,13 @@ class RAGVT5(torch.nn.Module):
 				layout_info.append(page_layouts)
 		else:
 			layout_info = [[]]
+		stats["layout_time"] = time() - start_time
 
 		# Get chunks
 		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks, layout_labels_chunks, chunk_stats = \
 			self.get_chunks(words, boxes, layout_info, chunk_size, chunk_size_tol, overlap, return_words)
 
 		# Compute some statistics
-		stats["layout_time"] = time() - start_time
 		if layout_info != [[]]:
 			stats["n_layouts_per_page_dist"] = Counter()
 			stats["layouts_size_w_dist"] = Counter()

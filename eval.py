@@ -94,16 +94,16 @@ def evaluate(
 
 		if return_scores_by_sample:
 			# Save metrics for each sample
-			for b in range(bs):
-				scores_by_samples[batch["question_id"][b]] = {
-					"accuracy": metrics["accuracy"][b],
-					"anls": metrics["anls"][b],
-					"ret_prec": ret_metric[b],
-					"pred_answer": pred_answers[b],
-					"actual_answer": batch["answers"][b],
-					"pred_answer_conf": pred_answers_conf[b],
-					"pred_answer_page": pred_answer_pages[b] if pred_answer_pages is not None else None,
-					"chunk_score": ret_eval["chunk_score"][b],
+			for _b in range(bs):
+				scores_by_samples[batch["question_id"][_b]] = {
+					"accuracy": metrics["accuracy"][_b],
+					"anls": metrics["anls"][_b],
+					"ret_prec": ret_metric[_b],
+					"pred_answer": pred_answers[_b],
+					"actual_answer": batch["answers"][_b],
+					"pred_answer_conf": pred_answers_conf[_b],
+					"pred_answer_page": pred_answer_pages[_b] if pred_answer_pages is not None else None,
+					"chunk_score": ret_eval["chunk_score"][_b],
 				}
 
 		# Accumulate metrics for the whole dataset
@@ -147,7 +147,11 @@ def evaluate(
 			retrieval_stats = retrieval["stats"]
 		else:
 			for key in retrieval_stats:
-				retrieval_stats[key] += retrieval["stats"][key]
+				if isinstance(retrieval_stats[key], Counter):
+					retrieval_stats[key] += retrieval["stats"][key]
+				else:
+					for k in retrieval_stats[key]:
+						retrieval_stats[key][k] += retrieval["stats"][key][k]
 		
 		# Free memory
 		del pred_answers, pred_answer_pages, pred_answers_conf, metrics, ret_metric, ret_eval, batch
@@ -195,14 +199,14 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 1,
+		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"layout_batch_size": 2,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "2",
+		"visible_devices": "1",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection"

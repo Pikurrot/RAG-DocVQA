@@ -261,12 +261,30 @@ if __name__ == "__main__":
 			min_val = min(stat.elements())
 			max_val = max(stat.elements())
 
+			# save only relevant distribution
+			stat_relevant = Counter()
+			# top 5 most common values
+			for k, v in stat.most_common(5):
+				stat_relevant[k] = v
+			# top 5 least common values
+			for k, v in stat.most_common()[:-6:-1]:
+				stat_relevant[k] = v
+			# smallest 5 keys
+			for k in sorted(stat.keys())[:5]:
+				stat_relevant[k] = stat[k]
+			# largest 5 keys
+			for k in sorted(stat.keys())[:-6:-1]:
+				stat_relevant[k] = stat[k]
+			# top 5 keys around the mean
+			for k in sorted(stat.keys(), key=lambda x: abs(x-mean))[:5]:
+				stat_relevant[k] = stat[k]
+
 			eval_res["retrieval_stats"][key] = {
 				"mean": mean,
 				"std": std,
 				"min": min_val,
 				"max": max_val,
-				"distribution": dict(stat)
+				"relevant_samples": dict(stat_relevant)
 			}
 
 	save_data = {

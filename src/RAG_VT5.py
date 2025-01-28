@@ -397,6 +397,7 @@ class RAGVT5(torch.nn.Module):
 		top_k_page_indices = []  # (bs, k)
 		top_k_words_text = []  # (bs, k, n_words)
 		top_k_words_boxes = []  # (bs, k, n_words, 4)
+		top_k_layout_labels = []  # (bs, k)
 
 		for b in range(bs):
 			k_min = min(k, len(similarities[b]))
@@ -406,6 +407,7 @@ class RAGVT5(torch.nn.Module):
 			top_k_text.append([text_chunks[b][i] for i in top_k])
 			top_k_boxes.append([box_chunks[b][i] for i in top_k])
 			top_k_page_indices.append([page_indices[b][i] for i in top_k])
+			top_k_layout_labels.append([layout_labels_chunks[b][i] for i in top_k])
 
 			# If return words (for generator), also include surrounding words
 			if return_words:
@@ -494,6 +496,12 @@ class RAGVT5(torch.nn.Module):
 			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
 		elif self.page_retrieval == "anyconforacle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
+
+		stats["layout_labels_topk_dist"] = {layout_map[label]: 0 for label in layout_map}
+		for b in range(bs):
+			for c in range(len(top_k_layout_labels[b])):
+				label = top_k_layout_labels[b][c]
+				stats["layout_labels_topk_dist"][layout_map[label]] += 1
 
 		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_info, stats
 

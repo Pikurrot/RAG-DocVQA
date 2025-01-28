@@ -2,7 +2,7 @@ import gradio as gr
 from src.build_utils import build_model
 from src.utils import load_config
 from src.process_pdf import load_pdf
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageFont
 import argparse
 import os
 
@@ -19,6 +19,21 @@ layout_map = {
 	9: 'Table',
 	10: 'Text',
 	11: 'Title'
+}
+
+color_map = {
+	0: 'red',
+	1: 'green',
+	2: 'blue',
+	3: 'yellow',
+	4: 'purple',
+	5: 'orange',
+	6: 'cyan',
+	7: 'magenta',
+	8: 'lime',
+	9: 'pink',
+	10: 'brown',
+	11: 'gray'
 }
 
 # Function to create a dataloader generator
@@ -78,8 +93,9 @@ def process_next_batch(question: str):
 					]
 					img = images_with_boxes[i]
 					draw = ImageDraw.Draw(img)
-					draw.rectangle(resized_box, outline="red", width=3)
-					draw.text(resized_box[:2], layout_map[labels[j]], fill="red")
+					draw.rectangle(resized_box, outline=color_map[labels[j]], width=3)
+					font = ImageFont.truetype("arial.ttf", 20)  # Specify the font and size
+					draw.text(resized_box[:2], layout_map[labels[j]], fill=color_map[labels[j]], font=font)
 
 		# Model outputs
 		predicted_answer = pred_answers[0]
@@ -181,7 +197,8 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		"visible_devices": "0",
-		"layout_model_weights": "cmarkea/dit-base-layout-detection"
+		"layout_model_weights": "cmarkea/dit-base-layout-detection",
+		"use_layout_labels": True,
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

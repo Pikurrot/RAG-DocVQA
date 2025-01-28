@@ -313,7 +313,8 @@ if __name__ == "__main__":
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"save_folder": "8-layout_model"
+		"use_layout_labels": True, # distinguish layout labels for better retrieval
+		"save_folder": "8-layout_model",
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

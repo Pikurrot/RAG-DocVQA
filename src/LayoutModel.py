@@ -29,7 +29,7 @@ class LayoutModel(torch.nn.Module):
 		self.model_path = config.get("layout_model_weights", "cmarkea/dit-base-layout-detection")
 		self.device = config.get("device", "cuda")
 		self.cache_dir = config.get("cache_dir", None)
-		self.distinguish_labels = config.get("distinguish_labels", False)
+		self.distinguish_labels = config.get("use_layout_labels", False)
 
 		# Load layout model
 		self.processor = AutoImageProcessor.from_pretrained(self.model_path, cache_dir=self.cache_dir)
@@ -184,7 +184,7 @@ class LayoutModel(torch.nn.Module):
 					label = np.argmax(np.bincount(segment_crop.flatten()))
 					labels_.append(label)
 			else:
-				labels_.extend([1]*len(bbx))
+				labels_.extend([10]*len(bbx))
 			bbox_pred.append(dict(boxes=boxes_, labels=labels_))
 
 		# Filter bounding boxes

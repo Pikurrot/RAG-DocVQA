@@ -31,6 +31,7 @@ class RAGVT5(torch.nn.Module):
 		self.add_sep_token = config.get("add_sep_token", False)
 		self.cache_dir = config.get("cache_dir", None)
 		print(f"Using {self.cache_dir} as cache folder")
+		self.use_layout_labels = config.get("use_layout_labels", False)
 
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True)
 		t5_config.visual_module_config = config.get("visual_module", {})

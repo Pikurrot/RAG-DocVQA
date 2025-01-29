@@ -14,10 +14,11 @@ from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
 from src.RAG_VT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
+from src.logger import LoggerEval
 from typing import Union
 
 
-def save_data(
+def save_local(
 		config: dict,
 		filename: str,
 		eval_res: dict
@@ -99,10 +100,66 @@ def save_data(
 	if eval_res["results"]:
 		save_json(results_file, eval_res["results"])
 
+	return save_data
+
+def log_wandb(
+		logger: LoggerEval,
+		save_data: dict
+):
+	log_data = {
+		"Accuracy": save_data["Avg accuracy"],
+		"Anls": save_data["Avg ANLS"],
+		"Retrieval precision": save_data["Avg retrieval precision"],
+		"Chunk score": save_data["Avg chunk score"],
+		"Avg. inference times": {
+			"values": {
+				"Load time": save_data["Avg load time"],
+				"Retrieval time": save_data["Avg retrieval time"],
+				"Generation time": save_data["Avg generation time"]
+			},
+			"config": {
+				"chart_type": "pie"
+			}
+		},
+		"Avg. retrieval times": {
+			"values": {
+				"Layout time": save_data["Avg retrieval time (layout)"],
+				"Rest": save_data["Avg retrieval time"] - save_data["Avg retrieval time (layout)"],
+			},
+			"config": {
+				"chart_type": "pie"
+			}
+		},
+		"Layout labels count": {
+			"values": [
+				save_data["Retrieval stats"]["layout_labels_dist"],
+				save_data["Retrieval stats"]["layout_labels_topk_dist"]
+			],
+			"config": {
+				"chart_type": "spider",
+				"log_scale": True,
+				"legend": ["All labels", "Top-k chunks"]
+			}
+		},
+		"Layout labels metrics": {
+			"values": [
+				save_data["Retrieval stats"]["layout_labels_accuracy"],
+				save_data["Retrieval stats"]["layout_labels_anls"]
+			],
+			"config": {
+				"chart_type": "spider",
+				"legend": ["Accuracy", "ANLS"]
+			}
+		}
+	}
+
+	logger.parse_and_log(log_data)
+
 def evaluate(
 		data_loader: DataLoader,
 		model: Union[RAGVT5, Proxy_HiVT5],
 		evaluator: Evaluator,
+		logger: LoggerEval,
 		**kwargs
 ):
 	return_scores_by_sample = kwargs.get("return_scores_by_sample", False)
@@ -291,7 +348,10 @@ def evaluate(
 			# Save data
 			inf_time_f = time.time() - start_time
 			res["inf_time"] = inf_time_f
-			save_data(config, filename, res)
+			save_data = save_local(config, filename, res)
+
+			# Log data
+			log_wandb(logger, save_data)
 
 	return res
 
@@ -299,7 +359,7 @@ def evaluate(
 if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
-		"model": "RAGVT5", # RAGVT5, HiVT5
+		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
@@ -317,17 +377,17 @@ if __name__ == "__main__":
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True, # distinguish layout labels for better retrieval
 		"save_folder": "8-layout_model",
+		"save_name_append": "layout"
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	start_time = time.time()
 	experiment_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-	if config["model_name"] == "Hi-VT5":
-		filename = "hivt5_{:}.json".format(experiment_date)
-	else:
-		filename = "{:}_{:}_{:}.json".format(config.get("embed_model", "").lower(), config.get("page_retrieval", "").lower(), experiment_date)
+	experiment_name = f"{config['model_name']}_{config["page_retrieval"]}_{config["save_name_append"]}_{experiment_date}"
+	filename = f"{experiment_name}.json"
 	print(f"Metrics will be saved in {config['save_dir']}/metrics/{config['save_folder']}/{filename}")
+	logger = LoggerEval(config, experiment_name)
 
 	print("Building model...")
 	model = build_model(config)
@@ -342,7 +402,7 @@ if __name__ == "__main__":
 	evaluator = Evaluator(case_sensitive=False)
 	evaluate(
 		val_data_loader,
-		model, evaluator,
+		model, evaluator, logger,
 		return_scores_by_sample=True,
 		return_answers=True,
 		save_results=False,

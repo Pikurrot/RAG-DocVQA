@@ -121,6 +121,8 @@ class LoggerEval:
 	def log_pie_chart(self, key, values):
 		labels = list(values.keys())
 		sizes = list(values.values())
+		if all(size == 0 for size in sizes):
+			sizes = [1 for _ in sizes]
 		
 		fig, ax = plt.subplots()
 		ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 14})

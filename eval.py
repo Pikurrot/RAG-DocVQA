@@ -373,7 +373,7 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 6,
+		"layout_batch_size": 2,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -401,7 +401,7 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	data_size = 0.01
+	data_size = 1.0
 	dataset = build_dataset(config, split="val", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 

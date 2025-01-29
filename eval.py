@@ -14,7 +14,6 @@ from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
 from src.RAG_VT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
-from src.LayoutModel import layout_map
 from typing import Union
 
 
@@ -42,32 +41,27 @@ def save_data(
 			max_val = max(stat.elements())
 
 			# save only relevant distribution
-			stat_relevant = Counter()
+			stat_relevant = dict()
 			# top 5 most common values
-			for k, v in stat.most_common(5):
-				stat_relevant[k] = v
+			stat_relevant["most_common"] = {k: v for k, v in stat.most_common(5)}
 			# top 5 least common values
-			for k, v in stat.most_common()[:-6:-1]:
-				stat_relevant[k] = v
+			stat_relevant["least_common"] = {k: v for k, v in stat.most_common()[:-6:-1]}
 			# smallest 5 keys
-			for k in sorted(stat.keys())[:5]:
-				stat_relevant[k] = stat[k]
+			stat_relevant["smallest"] = {k: stat[k] for k in sorted(stat.keys())[:5]}
 			# largest 5 keys
-			for k in sorted(stat.keys())[:-6:-1]:
-				stat_relevant[k] = stat[k]
+			stat_relevant["largest"] = {k: stat[k] for k in sorted(stat.keys())[:-6:-1]}
 			# top 5 keys around the mean
-			for k in sorted(stat.keys(), key=lambda x: abs(x-mean))[:5]:
-				stat_relevant[k] = stat[k]
+			stat_relevant["around_mean"] = {k: stat[k] for k in sorted(stat.keys(), key=lambda x: abs(x-mean))[:5]}
 
 			eval_res["retrieval_stats"][key] = {
 				"mean": mean,
 				"std": std,
 				"min": min_val,
 				"max": max_val,
-				"relevant_samples": dict(stat_relevant)
+				"relevant_samples": stat_relevant
 			}
 		elif isinstance(stat, dict) and isinstance(list(stat.values())[0], list):
-			eval_res["retrieval_stats"][key] = {k: np.mean(v) for k, v in stat.items()}
+			eval_res["retrieval_stats"][key] = {k: np.mean(v) if v else -1 for k, v in stat.items()}
 	
 	save_data = {
 		"Model": config["model_name"],
@@ -102,10 +96,8 @@ def save_data(
 	metrics_file = os.path.join(config["save_dir"], "metrics", config["save_folder"], filename)
 	results_file = os.path.join(config["save_dir"], "results", config["save_folder"], filename)
 	save_json(metrics_file, save_data)
-	print("Metrics correctly saved in: {:s}".format(metrics_file))
 	if eval_res["results"]:
 		save_json(results_file, eval_res["results"])
-		print("Results correctly saved in: {:s}".format(results_file))
 
 def evaluate(
 		data_loader: DataLoader,
@@ -118,6 +110,7 @@ def evaluate(
 	save_results = kwargs.get("save_results", False)
 	start_time = kwargs.get("start_time", time.time())
 	save_continuously = kwargs.get("save_continuously", False)
+	filename = kwargs.get("filename", "eval.json")
 	model_name = model.__class__.__name__
 	model_name = "Hi-VT5" if model_name == "Proxy_HiVT5" else model_name
 
@@ -291,7 +284,7 @@ def evaluate(
 				"total_layout_time": layout_time,
 				"total_retrieval_time": retrieval_time,
 				"total_generation_time": generation_time,
-				"retrieval_stats": retrieval_stats,
+				"retrieval_stats": retrieval_stats.copy(),
 				"results": results
 			}
 
@@ -312,7 +305,7 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 2,
+		"layout_batch_size": 6,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -334,12 +327,13 @@ if __name__ == "__main__":
 		filename = "hivt5_{:}.json".format(experiment_date)
 	else:
 		filename = "{:}_{:}_{:}.json".format(config.get("embed_model", "").lower(), config.get("page_retrieval", "").lower(), experiment_date)
+	print(f"Metrics will be saved in {config['save_dir']}/metrics/{config['save_folder']}/{filename}")
 
 	print("Building model...")
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	data_size = 1.0
+	data_size = 0.01
 	dataset = build_dataset(config, split="val", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
@@ -353,6 +347,7 @@ if __name__ == "__main__":
 		return_answers=True,
 		save_results=False,
 		save_continuously=True,
+		filename=filename,
 		chunk_num=config["chunk_num"],
 		chunk_size=config["chunk_size"],
 		overlap=config["overlap"],

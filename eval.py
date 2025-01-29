@@ -106,6 +106,14 @@ def log_wandb(
 		logger: LoggerEval,
 		save_data: dict
 ):
+	def str2sec(time_str: str) -> int:
+		# takes something like "00:00:01" or "00:00:01 (2.90%)" and returns the seconds
+		if "(" in time_str:
+			time_str = time_str.split("(")[0].strip()
+		# transform date to total seconds
+		h, m, s = time_str.split(":")
+		return int(h)*3600 + int(m)*60 + int(s)
+
 	log_data = {
 		"Accuracy": save_data["Avg accuracy"],
 		"Anls": save_data["Avg ANLS"],
@@ -113,9 +121,9 @@ def log_wandb(
 		"Chunk score": save_data["Avg chunk score"],
 		"Avg. inference times": {
 			"values": {
-				"Load time": save_data["Avg load time"],
-				"Retrieval time": save_data["Avg retrieval time"],
-				"Generation time": save_data["Avg generation time"]
+				"Load time": str2sec(save_data["Avg load time"]),
+				"Retrieval time": str2sec(save_data["Avg retrieval time"]),
+				"Generation time": str2sec(save_data["Avg generation time"])
 			},
 			"config": {
 				"chart_type": "pie"
@@ -123,8 +131,8 @@ def log_wandb(
 		},
 		"Avg. retrieval times": {
 			"values": {
-				"Layout time": save_data["Avg retrieval time (layout)"],
-				"Rest": save_data["Avg retrieval time"] - save_data["Avg retrieval time (layout)"],
+				"Layout time": str2sec(save_data["Avg retrieval time (layout)"]),
+				"Rest": str2sec(save_data["Avg retrieval time"]) - str2sec(save_data["Avg retrieval time (layout)"]),
 			},
 			"config": {
 				"chart_type": "pie"
@@ -384,7 +392,7 @@ if __name__ == "__main__":
 	config = load_config(args)
 	start_time = time.time()
 	experiment_date = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-	experiment_name = f"{config['model_name']}_{config["page_retrieval"]}_{config["save_name_append"]}_{experiment_date}"
+	experiment_name = f"{config['model_name']}_{config['page_retrieval']}_{config['save_name_append']}_{experiment_date}"
 	filename = f"{experiment_name}.json"
 	print(f"Metrics will be saved in {config['save_dir']}/metrics/{config['save_folder']}/{filename}")
 	logger = LoggerEval(config, experiment_name)

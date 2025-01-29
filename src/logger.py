@@ -91,11 +91,11 @@ class LoggerEval:
 	
 	def __init__(self, config: dict, experiment_name: str):
 		self.log_folder = config["save_dir"]
+		self.experiment_name = experiment_name
 		self.logger = wb.init(project="RAG-DocVQA-Eval", name=self.experiment_name, dir=self.log_folder, config=config)
 		self._print_config(config)
 	
 	def _print_config(self, config: dict):
-		print("{:s}: {:s} \n{{".format(config["Model"], config["Weights"]))
 		for k, v in config.items():
 			if k != "Model" and k != "Weights":
 				print("\t{:}: {:}".format(k, v))
@@ -123,7 +123,7 @@ class LoggerEval:
 		sizes = list(values.values())
 		
 		fig, ax = plt.subplots()
-		ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+		ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 14})
 		ax.axis('equal')
 		
 		self.logger.log({key: wb.Image(fig)})
@@ -152,8 +152,8 @@ class LoggerEval:
 			ax.fill(angles, data, alpha=0.3)
 		
 		ax.set_xticks(angles[:-1])
-		ax.set_xticklabels(categories)
-		ax.legend(loc="upper right")
+		ax.set_xticklabels(categories, fontsize=14)
+		ax.legend(loc="upper right", fontsize=14)
 		
 		self.logger.log({key: wb.Image(fig)})
 		plt.close(fig)

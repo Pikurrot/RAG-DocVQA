@@ -299,8 +299,7 @@ class RAGVT5(torch.nn.Module):
 			overlap: int = 0,
 			return_words: bool = False,
 			include_surroundings: int = 0
-	) -> Tuple[list, list, list, list, list, list]: # (bs, k), (bs, k, 4), (bs, k), (bs, k, h, w, 3),
-													# (bs, k, n_words), (bs, k, n_words, 4)
+	) -> tuple:
 		"""
 		Retrieve top k chunks and corresponding image patches
 			:param batch: input batch with "question", "words", "boxes" and "images"
@@ -310,7 +309,8 @@ class RAGVT5(torch.nn.Module):
 			:param return_words: if True, return also the ocr and boxes for individual words
 			:param include_surroundings: number of words to include before and after each chunk
 			:return: top k chunks, top k boxes, top k image patches, top k page indices,
-					top k words text chunks, top k words box chunks
+					top k words text chunks, top k words box chunks, top k layout labels,
+					similarities, layout_info, stats
 		"""
 		# Should take [question, pages ocr, pages boxes, pages images]
 		# and return [question, chunks ocr, chunks boxes, chunks image patches]
@@ -498,13 +498,24 @@ class RAGVT5(torch.nn.Module):
 		elif self.page_retrieval == "anyconforacle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
 
-		stats["layout_labels_topk_dist"] = {layout_map[label]: 0 for label in layout_map}
+		stats["layout_labels_topk_dist"] = {label: 0 for label in layout_map.values()}
 		for b in range(bs):
 			for c in range(len(top_k_layout_labels[b])):
 				label = top_k_layout_labels[b][c]
 				stats["layout_labels_topk_dist"][layout_map[label]] += 1
 
-		return top_k_text, top_k_boxes, top_k_patches, top_k_page_indices, top_k_words_text, top_k_words_boxes, similarities, layout_info, stats
+		return (
+			top_k_text, # (bs, k)
+			top_k_boxes, # (bs, k, 4)
+			top_k_patches, # (bs, k, h, w, 3)
+			top_k_page_indices, # (bs, k)
+			top_k_words_text, # (bs, k, n_words)
+			top_k_words_boxes, # (bs, k, n_words, 4)
+			top_k_layout_labels, # (bs, k)
+			similarities, # (bs, n_chunks)
+			layout_info, # (bs, n_pages)
+			stats # dict
+		)
 
 	def forward(
 			self,
@@ -526,6 +537,7 @@ class RAGVT5(torch.nn.Module):
 			top_k_page_indices,
 			top_k_words_text,
 			top_k_words_boxes,
+			top_k_layout_labels,
 			similarities,
 			layout_info,
 			stats
@@ -656,7 +668,8 @@ class RAGVT5(torch.nn.Module):
 				"stats": stats,
 				"retrieval_time": retrieval_time,
 				"generation_time": generation_time,
-				"layout_info": layout_info
+				"layout_info": layout_info,
+				"top_k_layout_labels": top_k_layout_labels
 			}
 			if self.page_retrieval in ["oracle", "concat"]:
 				retrieval.update({

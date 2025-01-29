@@ -2,6 +2,7 @@ import editdistance
 import numpy as np
 from typing import List, Union
 from src.utils import get_similarity_score
+from src.LayoutModel import layout_map
 
 class Evaluator:
 	def __init__(
@@ -20,32 +21,47 @@ class Evaluator:
 			self,
 			gt_answers: List[List[str]],
 			preds: Union[List[str], List[List[str]]],
-			answer_types: List[str]=None
+			answer_types: List[str]=None,
+			top_k_layout_labels: List[List[int]]=None
 	) -> dict:
 		answer_types = answer_types if answer_types is not None else ["string" for batch_idx in range(len(gt_answers))]
 		batch_accuracy = []
 		batch_anls = []
+		layout_labels_accuracy = {value: [] for value in layout_map.values()}
+		layout_labels_anls = {value: [] for value in layout_map.values()}
 
 		# Compute metrics for each batch element
 		for b in range(len(preds)):
 			gt = [self._preprocess_str(gt_elm) for gt_elm in gt_answers[b]]
 			if isinstance(preds[b], list): # in case of Anyconf
-				pred = [self._preprocess_str(pred_elm) for pred_elm in preds[b]]
+				any_pred = [self._preprocess_str(pred) for pred in preds[b]]
 				batch_accuracy_max = 0
 				batch_anls_max = 0
-				for pred_i in pred:
-					i_accuracy = self._calculate_accuracy(gt, pred_i, answer_types[b])
-					i_anls = self._calculate_anls(gt, pred_i, answer_types[b])
-					batch_accuracy_max = max(batch_accuracy_max, i_accuracy)
-					batch_anls_max = max(batch_anls_max, i_anls)
+				for i, pred in enumerate(any_pred):
+					accuracy = self._calculate_accuracy(gt, pred, answer_types[b])
+					anls = self._calculate_anls(gt, pred, answer_types[b])
+					batch_accuracy_max = max(batch_accuracy_max, accuracy)
+					batch_anls_max = max(batch_anls_max, anls)
+					if top_k_layout_labels is not None:
+						label = layout_map[top_k_layout_labels[b][i]]
+						layout_labels_accuracy[label].append(accuracy)
+						layout_labels_anls[label].append(anls)
 				batch_accuracy.append(batch_accuracy_max)
 				batch_anls.append(batch_anls_max)
 			else: # others
 				pred = self._preprocess_str(preds[b])
-				batch_accuracy.append(self._calculate_accuracy(gt, pred, answer_types[b]))
-				batch_anls.append(self._calculate_anls(gt, pred, answer_types[b]))
+				accurracy = self._calculate_accuracy(gt, pred, answer_types[b])
+				anls = self._calculate_anls(gt, pred, answer_types[b])
+				if top_k_layout_labels is not None:
+					layout_labels = top_k_layout_labels[b]
+					for label in layout_labels:
+						label = layout_map[label]
+						layout_labels_accuracy[label].append(accurracy)
+						layout_labels_anls[label].append(anls)
+				batch_accuracy.append(accurracy)
+				batch_anls.append(anls)
 
-		return {"accuracy": batch_accuracy, "anls": batch_anls}
+		return {"accuracy": batch_accuracy, "anls": batch_anls, "layout_labels_accuracy": layout_labels_accuracy, "layout_labels_anls": layout_labels_anls}
 
 	def get_retrieval_metric(
 			self,

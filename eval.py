@@ -14,6 +14,7 @@ from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
 from src.RAG_VT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
+from src.LayoutModel import layout_map
 from typing import Union
 
 
@@ -65,6 +66,8 @@ def save_data(
 				"max": max_val,
 				"relevant_samples": dict(stat_relevant)
 			}
+		elif isinstance(stat, dict) and isinstance(list(stat.values())[0], list):
+			eval_res["retrieval_stats"][key] = {k: np.mean(v) for k, v in stat.items()}
 	
 	save_data = {
 		"Model": config["model_name"],
@@ -167,7 +170,7 @@ def evaluate(
 			pred_answer_pages = retrieval["page_indices"]
 
 		# Compute metrics
-		metrics = evaluator.get_metrics(batch["answers"], pred_answers, batch.get("answer_type", None))
+		metrics = evaluator.get_metrics(batch["answers"], pred_answers, batch.get("answer_type", None), retrieval["top_k_layout_labels"])
 
 		# Evaluate retrieval
 		if "answer_page_idx" in batch and pred_answer_pages is not None:
@@ -210,6 +213,9 @@ def evaluate(
 		layout_time += retrieval["stats"]["layout_time"]	
 		retrieval_time += retrieval["retrieval_time"]
 		generation_time += retrieval["generation_time"]
+		
+		retrieval["stats"]["layout_labels_accuracy"] = metrics["layout_labels_accuracy"]
+		retrieval["stats"]["layout_labels_anls"] = metrics["layout_labels_anls"]
 
 		if return_answers:
 			all_pred_answers.extend(pred_answers)
@@ -240,7 +246,10 @@ def evaluate(
 					retrieval_stats[key] += retrieval["stats"][key]
 				else:
 					for k in retrieval_stats[key]:
-						retrieval_stats[key][k] += retrieval["stats"][key][k]
+						if isinstance(retrieval_stats[key][k], list):
+							retrieval_stats[key][k].extend(retrieval["stats"][key][k])
+						else:
+							retrieval_stats[key][k] += retrieval["stats"][key][k]
 		
 		# Free memory
 		del pred_answers, pred_answer_pages, pred_answers_conf, metrics, ret_metric, ret_eval, batch

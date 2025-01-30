@@ -153,16 +153,15 @@ class LoggerEval:
 			data = list(values.values())
 			data += data[:1]  # Close the loop
 			
-			if log_scale:
-				data = np.log1p(data)  # Apply log scale
-				ax.set_yscale("log")
-			
 			ax.plot(angles, data, linewidth=2, label=label)
 			ax.fill(angles, data, alpha=0.3)
 		
+		if log_scale:
+			ax.set_yscale("log")
 		ax.set_xticks(angles[:-1])
 		ax.set_xticklabels(categories, fontsize=14)
-		ax.legend(loc="upper right", fontsize=14)
+		ax.legend(loc="upper left", fontsize=14, bbox_to_anchor=(0.5, -0.1))
 		
 		self.logger.log({key: wb.Image(fig)})
+		fig.subplots_adjust(bottom=0.2)
 		plt.close(fig)

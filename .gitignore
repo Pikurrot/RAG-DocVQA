@@ -172,3 +172,4 @@ save/
 temp_data
 wandb/
 temp*
+*.ttf

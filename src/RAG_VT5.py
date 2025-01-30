@@ -213,7 +213,8 @@ class RAGVT5(torch.nn.Module):
 			batch_layout_labels_chunks = []
 			batch_n_chunks = 0
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
-				page_boxes = page_boxes.tolist()
+				if not isinstance(page_words, list):
+					page_boxes = page_boxes.tolist()
 				if self.page_retrieval == "oracle":
 					# If oracle, take the whole page as a chunk
 					batch_page_indices.append(p)

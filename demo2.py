@@ -78,7 +78,7 @@ def process_next_batch(question: str):
 			])
 
 		# Draw layout boxes on original images
-		images_with_boxes = original_images.copy()
+		images_with_boxes = [img.copy() for img in original_images]
 		retrieved_layout_info = retrieval.get("layout_info", [[]])[0]  # List of dictionaries
 		if retrieved_layout_info:
 			for i, layout_info in enumerate(retrieved_layout_info):

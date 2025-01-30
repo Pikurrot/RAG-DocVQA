@@ -370,7 +370,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "AnyConf", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 2,
@@ -379,7 +379,7 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "1",
+		"visible_devices": "2",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
@@ -395,7 +395,6 @@ if __name__ == "__main__":
 	experiment_name = f"{config['model_name']}_{config['page_retrieval']}_{config['save_name_append']}_{experiment_date}"
 	filename = f"{experiment_name}.json"
 	print(f"Metrics will be saved in {config['save_dir']}/metrics/{config['save_folder']}/{filename}")
-	logger = LoggerEval(config, experiment_name)
 
 	print("Building model...")
 	model = build_model(config)
@@ -408,13 +407,16 @@ if __name__ == "__main__":
 	# Evaluate the model
 	print("Evaluating...")
 	evaluator = Evaluator(case_sensitive=False)
+	save_continuously = True
+	log_media_interval = (len(val_data_loader) // 10) if save_continuously else 1
+	logger = LoggerEval(config, experiment_name, log_media_interval)
 	evaluate(
 		val_data_loader,
 		model, evaluator, logger,
 		return_scores_by_sample=True,
 		return_answers=True,
 		save_results=False,
-		save_continuously=True,
+		save_continuously=save_continuously,
 		filename=filename,
 		chunk_num=config["chunk_num"],
 		chunk_size=config["chunk_size"],

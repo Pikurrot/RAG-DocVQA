@@ -89,9 +89,11 @@ class Logger:
 
 class LoggerEval:
 	
-	def __init__(self, config: dict, experiment_name: str):
+	def __init__(self, config: dict, experiment_name: str, log_media_interval: int = 1):
 		self.log_folder = config["save_dir"]
 		self.experiment_name = experiment_name
+		self.log_media_interval = log_media_interval
+		self.log_media_counter = 0
 		self.logger = wb.init(project="RAG-DocVQA-Eval", name=self.experiment_name, dir=self.log_folder, config=config)
 		self._print_config(config)
 	
@@ -105,18 +107,23 @@ class LoggerEval:
 		self.logger.log(*args, **kwargs)
 
 	def parse_and_log(self, log_data):
+		self.log_media_counter += 1
 		for key, value in log_data.items():
 			if isinstance(value, (int, float)):
 				# Log numerical value directly
 				self.logger.log({key: value})
 			elif isinstance(value, dict) and "values" in value and "config" in value:
-				chart_type = value["config"].get("chart_type", "default")
-				if chart_type == "pie":
-					self.log_pie_chart(key, value["values"])
-				elif chart_type == "spider":
-					self.log_spider_chart(key, value["values"], value["config"].get("legend"), value["config"].get("log_scale", False))
-				else:
-					print(f"Unsupported chart type: {chart_type} for key {key}")
+				if (self.log_media_counter == self.log_media_interval) or (self.log_media_counter == -1):
+					self.log_media_counter = -1
+					chart_type = value["config"].get("chart_type", "default")
+					if chart_type == "pie":
+						self.log_pie_chart(key, value["values"])
+					elif chart_type == "spider":
+						self.log_spider_chart(key, value["values"], value["config"].get("legend"), value["config"].get("log_scale", False))
+					else:
+						print(f"Unsupported chart type: {chart_type} for key {key}")
+		if (self.log_media_counter == self.log_media_interval) or (self.log_media_counter == -1):
+			self.log_media_counter = 0
 
 	def log_pie_chart(self, key, values):
 		labels = list(values.keys())

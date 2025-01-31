@@ -12,7 +12,7 @@ def get_dataloader_generator(dataloader):
 		yield batch
 
 # Function to process the current batch
-def process_next_batch(question: str):
+def process_next_batch():
 	try:
 		global config
 		# Fetch the next batch from the dataloader generator
@@ -24,6 +24,7 @@ def process_next_batch(question: str):
 			return_retrieval=True,
 			chunk_num=config.get("chunk_num", 10),
 			chunk_size=config.get("chunk_size", 60),
+			chunk_size_tol=config.get("chunk_size_tol", 15),
 			overlap=config.get("overlap", 10),
 			include_surroundings=config.get("include_surroundings", 0)
 		)
@@ -108,15 +109,20 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
-		"embed_model": "BGE", # VT5 or BGE
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / Custom (HiVT5 only)
-		"add_sep_token": True,
+		"embed_model": "BGE",
+		"page_retrieval": "Concat",
+		"add_sep_token": False,
+		"batch_size": 1,
+		"layout_batch_size": 4,
 		"chunk_num": 10,
 		"chunk_size": 60,
+		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
 		"visible_devices": "5",
-		# "model_weights": "save/checkpoints/ragvt5_concat_mp-docvqa_no-token/best.ckpt"
+		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection",
+		"use_layout_labels": True,
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
@@ -124,10 +130,10 @@ if __name__ == "__main__":
 	print("Building model...")
 	model = build_model(config)
 	print("Building dataset...")
-	mpdocvqa = build_dataset(config=config, split="val")
+	dataset = build_dataset(config=config, split="val")
 	
 	# Initialize the dataloader
-	dataloader = DataLoader(mpdocvqa, batch_size=1, shuffle=False, collate_fn=mpdocvqa_collate_fn)
+	dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 	
 	# Create a generator from the dataloader
 	batch_generator = get_dataloader_generator(dataloader)

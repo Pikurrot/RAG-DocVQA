@@ -197,6 +197,7 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		"visible_devices": "0",
+		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
 	}

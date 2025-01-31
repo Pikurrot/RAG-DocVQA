@@ -114,8 +114,8 @@ def process_next_batch(question: str):
 				img = images_with_boxes[i]
 				draw = ImageDraw.Draw(img)
 				draw.rectangle(resized_box, outline=color_map[labels[j]], width=3)
-				font = ImageFont.truetype("arial.ttf", 20)  # Specify the font and size
-				draw.text(resized_box[:2], layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+				font = ImageFont.truetype("arial.ttf", 40)  # Specify the font and size
+				draw.text((resized_box[0], resized_box[1]-40), layout_map[labels[j]], fill=color_map[labels[j]], font=font)
 		
 		# Draw layout segments and raw boxes on original images
 		retrieved_layout_segments = retrieval["steps"]["layout_segments"][0]  # List of 2d arrays
@@ -137,8 +137,8 @@ def process_next_batch(question: str):
 			labels = layout_info_raw.get("labels", [])
 			for j, box in enumerate(boxes):
 				draw.rectangle(box, outline=color_map[labels[j]], width=3)
-				font = ImageFont.truetype("arial.ttf", 20)
-				draw.text(box[:2], layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+				font = ImageFont.truetype("arial.ttf", 40)
+				draw.text((box[0], box[1]-40), layout_map[labels[j]], fill=color_map[labels[j]], font=font)
 			images_with_segments_and_boxes[i] = blended
 
 		# Model outputs

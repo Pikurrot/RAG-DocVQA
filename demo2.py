@@ -203,19 +203,18 @@ with gr.Blocks() as demo:
 	question_input = gr.Textbox(label="Enter your question", lines=1)
 	ask_button = gr.Button("Submit Question")
 
-	with gr.Column():
-		gr.Markdown("## Original Information")
-		original_images_output = gr.Gallery(label="Original Page Images", elem_id="original_gallery", columns=2, height=300)
-		original_text_output = gr.Textbox(label="Original OCR Text", lines=10)
-		with gr.Row():
-			with gr.Column():
-				gr.Markdown("## Layout Information")
-				layout_segments_output = gr.Gallery(label="Layout Segments", elem_id="layout_segments_gallery", columns=2, height=300)
-				all_chunks_output = gr.Textbox(label="All Text Chunks", lines=10)
-			with gr.Column():
-				gr.Markdown("## Retrieved Information")
-				retrieved_patches_output = gr.Gallery(label="Retrieved Patches", elem_id="retrieved_gallery", columns=2, height=300)
-				retrieved_chunks_output = gr.Textbox(label="Retrieved Text Chunks", lines=10)
+	gr.Markdown("## Original Information")
+	original_images_output = gr.Gallery(label="Original Page Images", elem_id="original_gallery", columns=2, height=300)
+	original_text_output = gr.Textbox(label="Original OCR Text", lines=10)
+	with gr.Row():
+		with gr.Column():
+			gr.Markdown("## Layout Information")
+			layout_segments_output = gr.Gallery(label="Layout Segments", elem_id="layout_segments_gallery", columns=2, height=300)
+			all_chunks_output = gr.Textbox(label="All Text Chunks", lines=10)
+		with gr.Column():
+			gr.Markdown("## Retrieved Information")
+			retrieved_patches_output = gr.Gallery(label="Retrieved Patches", elem_id="retrieved_gallery", columns=2, height=300)
+			retrieved_chunks_output = gr.Textbox(label="Retrieved Text Chunks", lines=10)
 
 	gr.Markdown("## Question and Answers")
 

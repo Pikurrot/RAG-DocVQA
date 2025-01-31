@@ -338,24 +338,37 @@ class RAGVT5(torch.nn.Module):
 				new_batches.append(batch_images)
 			
 			# Process batches and flatten again
-			flatten_layout_boxes = []  # (bs*n_pages)
-			# layout_info[b][p]: {"boxes": (n_boxes, 4), "labels": (n_boxes,)}
+			flatten_layout_info = []  # (bs*n_pages,)
+			flatten_layout_segments = []  # (bs*n_pages, h, w)
+			flatten_layout_info_raw = []  # (bs*n_pages,)
 			for batch_images in new_batches:
-				batch_layout_boxes = self.layout_model(batch_images)
-				flatten_layout_boxes.extend(batch_layout_boxes)
+				batch_layout_boxes, steps = self.layout_model(batch_images, return_steps=True)
+				flatten_layout_info.extend(batch_layout_boxes)
+				flatten_layout_segments.extend(steps["segmentation"])
+				flatten_layout_info_raw.extend(steps["layout_info_raw"])
 			
 			# Reshape flatten_layout_boxes back to (bs, n_pages, n_boxes, 4)
 			layout_info = [] # (bs, n_pages)
+			layout_segments = [] # (bs, n_pages, h, w)
+			layout_info_raw = [] # (bs, n_pages)
 			# layout_info[b][p]: {"boxes": (n_boxes, 4), "labels": (n_boxes,)}
 			index = 0
 			for b in range(bs):
 				page_layouts = []
+				page_segments = []
+				page_info_raw = []
 				for p in range(len(images[b])):
-					page_layouts.append(flatten_layout_boxes[index])
+					page_layouts.append(flatten_layout_info[index])
+					page_segments.append(flatten_layout_segments[index])
+					page_info_raw.append(flatten_layout_info_raw[index])
 					index += 1
 				layout_info.append(page_layouts)
+				layout_segments.append(page_segments)
+				layout_info_raw.append(page_info_raw)
 		else:
 			layout_info = [[]]
+			layout_segments = [[]]
+			layout_info_raw = [[]]
 		stats["layout_time"] = time() - start_time
 
 		# Get chunks
@@ -494,10 +507,19 @@ class RAGVT5(torch.nn.Module):
 				batch_patches.append(patch)
 			top_k_patches.append(batch_patches)
 
+		# Organize output
 		if self.page_retrieval == "oracle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
 		elif self.page_retrieval == "anyconforacle":
 			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
+
+		steps = {
+			"text_chunks": text_chunks, # (bs, n_chunks)
+			"similarities": similarities, # (bs, n_chunks)
+			"layout_info": layout_info, # (bs, n_pages)
+			"layout_segments": layout_segments, # (bs, n_pages, h, w)
+			"layout_info_raw": layout_info_raw # (bs, n_pages)
+		}
 
 		stats["layout_labels_topk_dist"] = {label: 0 for label in layout_map.values()}
 		for b in range(bs):
@@ -513,8 +535,7 @@ class RAGVT5(torch.nn.Module):
 			top_k_words_text, # (bs, k, n_words)
 			top_k_words_boxes, # (bs, k, n_words, 4)
 			top_k_layout_labels, # (bs, k)
-			similarities, # (bs, n_chunks)
-			layout_info, # (bs, n_pages)
+			steps, # dict
 			stats # dict
 		)
 
@@ -539,12 +560,12 @@ class RAGVT5(torch.nn.Module):
 			top_k_words_text,
 			top_k_words_boxes,
 			top_k_layout_labels,
-			similarities,
-			layout_info,
+			steps,
 			stats
 		) = self.retrieve(batch, chunk_num, chunk_size, chunk_size_tol, overlap, True, include_surroundings)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
+		similarities = steps["similarities"]
 		# Generate
 		start_time = time()
 		new_batch = {}
@@ -666,11 +687,11 @@ class RAGVT5(torch.nn.Module):
 					else major_page_indices,
 				"words_text": top_k_words_text,
 				"words_boxes": top_k_words_boxes,
+				"top_k_layout_labels": top_k_layout_labels,
+				"steps": steps,
 				"stats": stats,
 				"retrieval_time": retrieval_time,
-				"generation_time": generation_time,
-				"layout_info": layout_info,
-				"top_k_layout_labels": top_k_layout_labels
+				"generation_time": generation_time
 			}
 			if self.page_retrieval in ["oracle", "concat"]:
 				retrieval.update({

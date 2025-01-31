@@ -1,7 +1,7 @@
 import torch
 import gc
 from transformers import AutoImageProcessor, BeitForSemanticSegmentation
-from typing import List, Tuple
+from typing import List, Tuple, Any
 from PIL import Image
 import numpy as np
 import cv2
@@ -148,7 +148,11 @@ class LayoutModel(torch.nn.Module):
 				detected_blocks.append(bounding_box)
 		return detected_blocks
 
-	def forward(self, images: List[Image.Image]) -> List[dict]:
+	def forward(
+			self,
+			images: List[Image.Image],
+			return_steps: bool=False
+	) -> Tuple[List[dict], List[dict]]:
 		with torch.inference_mode():
 			# Preprocess images
 			inputs = self.processor(images, return_tensors="pt", padding=False)
@@ -162,6 +166,7 @@ class LayoutModel(torch.nn.Module):
 				outputs,
 				target_sizes=[image.size[::-1] for image in images]
 			)
+			segmentation = [seg.cpu() for seg in segmentation]
 
 		del inputs, outputs
 		gc.collect()
@@ -170,7 +175,6 @@ class LayoutModel(torch.nn.Module):
 		# Find bounding boxes
 		bbox_pred = []
 		for img_seg in segmentation:
-			img_seg = img_seg.cpu()
 			boxes_, labels_ = [], []
 			mm = img_seg > 0
 			if mm.sum() > 0:
@@ -201,4 +205,12 @@ class LayoutModel(torch.nn.Module):
 			]
 			bbox_pred_filtered.append(dict(boxes=filtered_boxes, labels=filtered_labels))
 
-		return bbox_pred_filtered
+		if return_steps:
+			steps = {
+				"segmentation": segmentation,
+				"layout_info_raw": bbox_pred
+			}
+		else:
+			steps = None
+
+		return bbox_pred_filtered, steps

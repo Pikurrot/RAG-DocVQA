@@ -2,7 +2,8 @@ import gradio as gr
 from src.build_utils import build_model
 from src.utils import load_config
 from src.process_pdf import load_pdf
-from PIL import ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 import argparse
 import os
 
@@ -36,6 +37,21 @@ color_map = {
 	11: 'gray'
 }
 
+color2rgb = {
+	"red": (255, 0, 0),
+	"green": (0, 255, 0),
+	"blue": (0, 0, 255),
+	"yellow": (255, 255, 0),
+	"purple": (128, 0, 128),
+	"orange": (255, 165, 0),
+	"cyan": (0, 255, 255),
+	"magenta": (255, 0, 255),
+	"lime": (0, 255, 0),
+	"pink": (255, 192, 203),
+	"brown": (165, 42, 42),
+	"gray": (128, 128, 128)
+}
+
 # Function to create a dataloader generator
 def get_dataloader_generator(dataloader):
 	for batch in dataloader:
@@ -64,44 +80,82 @@ def process_next_batch(question: str):
 		original_text = "\n\n".join([f"Page {i+1}:\n{text}" for i, text in enumerate(original_text_list)])
 
 		# Prepare retrieved information
-		retrieved_patches = retrieval.get("patches", [[]])[0]  # List of PIL images
-		retrieved_text_list = retrieval.get("text", [[]])[0]  # List of strings
-		retrieved_text = "\n\n".join([f"Chunk {i+1}:\n{text}" for i, text in enumerate(retrieved_text_list)])
+		retrieved_patches = retrieval["patches"][0]  # List of PIL images
+		retrieved_chunks_list = retrieval["text"][0]  # List of strings
+		retrieved_top_k_layout_labels = retrieval["top_k_layout_labels"][0]  # List of integers
+		retrieved_chunks = "\n\n".join([f"Chunk {i+1} ({layout_map[label]}):\n{text}" for i, (text, label) in enumerate(zip(retrieved_chunks_list, retrieved_top_k_layout_labels))])
 
-		retrieved_page_indices_list = retrieval.get("page_indices", [[]])[0]  # List of integers
+		retrieved_page_indices_list = retrieval["page_indices"][0]  # List of integers
 		if model.page_retrieval == "concat":
 			retrieved_page_indices = ", ".join([str(idx) for idx in retrieved_page_indices_list])
 		elif model.page_retrieval == "maxconf":
 			retrieved_page_indices = ", ".join([
-				f"[{str(idx)}]" if i == retrieval.get("max_confidence_indices", [0])[0] else str(idx)
+				f"[{str(idx)}]" if i == retrieval["max_confidence_indices"][0] else str(idx)
 				for i, idx in enumerate(retrieved_page_indices_list)
 			])
 
+		# Other info
+		all_chunks_list = retrieval["steps"]["text_chunks"][0]  # List of strings
+		all_chunks = "\n\n".join([f"Chunk {i+1}:\n{text}" for i, text in enumerate(all_chunks_list)])
+
 		# Draw layout boxes on original images
+		retrieved_layout_info = retrieval["steps"]["layout_info"][0]  # List of dictionaries
 		images_with_boxes = [img.copy() for img in original_images]
-		retrieved_layout_info = retrieval.get("layout_info", [[]])[0]  # List of dictionaries
-		if retrieved_layout_info:
-			for i, layout_info in enumerate(retrieved_layout_info):
-				boxes = layout_info.get("boxes", [])
-				labels = layout_info.get("labels", [])
-				for j, box in enumerate(boxes):
-					resized_box = [
-						box[0] * original_images[i].width,
-						box[1] * original_images[i].height,
-						box[2] * original_images[i].width,
-						box[3] * original_images[i].height
-					]
-					img = images_with_boxes[i]
-					draw = ImageDraw.Draw(img)
-					draw.rectangle(resized_box, outline=color_map[labels[j]], width=3)
-					font = ImageFont.truetype("arial.ttf", 20)  # Specify the font and size
-					draw.text(resized_box[:2], layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+		for i, layout_info in enumerate(retrieved_layout_info):
+			boxes = layout_info.get("boxes", [])
+			labels = layout_info.get("labels", [])
+			for j, box in enumerate(boxes):
+				resized_box = [
+					box[0] * original_images[i].width,
+					box[1] * original_images[i].height,
+					box[2] * original_images[i].width,
+					box[3] * original_images[i].height
+				]
+				img = images_with_boxes[i]
+				draw = ImageDraw.Draw(img)
+				draw.rectangle(resized_box, outline=color_map[labels[j]], width=3)
+				font = ImageFont.truetype("arial.ttf", 20)  # Specify the font and size
+				draw.text(resized_box[:2], layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+		
+		# Draw layout segments and raw boxes on original images
+		retrieved_layout_segments = retrieval["steps"]["layout_segments"][0]  # List of 2d arrays
+		retrieved_layout_info_raw = retrieval["steps"]["layout_info_raw"][0]  # List of dictionaries
+		images_with_segments_and_boxes = [img.copy() for img in original_images]
+		for i, (layout_segment, layout_info_raw) in enumerate(zip(retrieved_layout_segments, retrieved_layout_info_raw)):
+			img = images_with_segments_and_boxes[i].convert("RGBA")
+			# draw segments transparently
+			seg_array = layout_segment.numpy().astype(np.uint8)
+			seg_colored = np.zeros((seg_array.shape[0], seg_array.shape[1], 4), dtype=np.uint8)
+			for label, color_name in color_map.items():
+				r, g, b = color2rgb[color_name]
+				seg_colored[seg_array == label] = [r, g, b, 128]
+			overlay = Image.fromarray(seg_colored, mode="RGBA")
+			blended = Image.alpha_composite(img, overlay)
+			# draw boxes
+			draw = ImageDraw.Draw(blended)
+			boxes = layout_info_raw.get("boxes", [])
+			labels = layout_info_raw.get("labels", [])
+			for j, box in enumerate(boxes):
+				draw.rectangle(box, outline=color_map[labels[j]], width=3)
+				font = ImageFont.truetype("arial.ttf", 20)
+				draw.text(box[:2], layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+			images_with_segments_and_boxes[i] = blended
 
 		# Model outputs
 		predicted_answer = pred_answers[0]
 		predicted_confidence = pred_answers_conf[0]
 
-		return (images_with_boxes, original_text, retrieved_patches, retrieved_text, predicted_answer, predicted_confidence, retrieved_page_indices)
+		return (
+			images_with_boxes,
+			original_text,
+			images_with_segments_and_boxes,
+			all_chunks,
+			retrieved_patches,
+			retrieved_chunks,
+			predicted_answer,
+			predicted_confidence,
+			retrieved_page_indices
+		)
 
 	except StopIteration:
 		return ([], "No more batches available.", [], "No more retrieved text.", "", "", 0, "", 0.0, "")
@@ -149,16 +203,19 @@ with gr.Blocks() as demo:
 	question_input = gr.Textbox(label="Enter your question", lines=1)
 	ask_button = gr.Button("Submit Question")
 
-	with gr.Row():
-		with gr.Column():
-			gr.Markdown("## Original Information")
-			original_images_output = gr.Gallery(label="Original Page Images", elem_id="original_gallery", columns=2, height=300)
-			original_text_output = gr.Textbox(label="Original OCR Text", lines=10)
-
-		with gr.Column():
-			gr.Markdown("## Retrieved Information")
-			retrieved_patches_output = gr.Gallery(label="Retrieved Patches", elem_id="retrieved_gallery", columns=2, height=300)
-			retrieved_text_output = gr.Textbox(label="Retrieved Text Chunks", lines=10)
+	with gr.Column():
+		gr.Markdown("## Original Information")
+		original_images_output = gr.Gallery(label="Original Page Images", elem_id="original_gallery", columns=2, height=300)
+		original_text_output = gr.Textbox(label="Original OCR Text", lines=10)
+		with gr.Row():
+			with gr.Column():
+				gr.Markdown("## Layout Information")
+				layout_segments_output = gr.Gallery(label="Layout Segments", elem_id="layout_segments_gallery", columns=2, height=300)
+				all_chunks_output = gr.Textbox(label="All Text Chunks", lines=10)
+			with gr.Column():
+				gr.Markdown("## Retrieved Information")
+				retrieved_patches_output = gr.Gallery(label="Retrieved Patches", elem_id="retrieved_gallery", columns=2, height=300)
+				retrieved_chunks_output = gr.Textbox(label="Retrieved Text Chunks", lines=10)
 
 	gr.Markdown("## Question and Answers")
 
@@ -174,8 +231,10 @@ with gr.Blocks() as demo:
 	ask_button.click(fn=process_next_batch, inputs=question_input, outputs=[
 		original_images_output,
 		original_text_output,
+		layout_segments_output,
+		all_chunks_output,
 		retrieved_patches_output,
-		retrieved_text_output,
+		retrieved_chunks_output,
 		predicted_answer_output,
 		predicted_confidence_output,
 		retrieved_page_indices_output

@@ -32,8 +32,9 @@ class RAGVT5(torch.nn.Module):
 		self.cache_dir = config.get("cache_dir", None)
 		print(f"Using {self.cache_dir} as cache folder")
 		self.use_layout_labels = config.get("use_layout_labels", False)
+		self.n_stats_examples = 5
 
-		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True)
+		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})
 
 		# Load generator
@@ -84,6 +85,16 @@ class RAGVT5(torch.nn.Module):
 	def train(self):
 		self.generator.train()
 
+	def stat_add_example(self, dct: dict, key: Any, example: Any):
+		"""
+		Add an example value to a list in a dictionary.
+		Used for retrieval stats examples.
+		"""
+		if key not in dct:
+			dct[key] = []
+		if len(dct[key]) < self.n_stats_examples:
+			dct[key].append(example)
+
 	@no_grad()
 	def embed(self, text: List[str]) -> torch.Tensor:
 		if not text:
@@ -131,7 +142,8 @@ class RAGVT5(torch.nn.Module):
 			chunk_size: int = 30,
 			chunk_size_tol: float = 0.15,
 			overlap: int = 0,
-			return_words: bool = False
+			return_words: bool = False,
+			**kwargs
 	) -> Tuple[list, list ,list, list, list, list, dict]: # (bs, n_chunks), (bs, n_chunks, 4), (bs, n_chunks),
 									# (bs, n_chunks, n_words), (bs, n_chunks, n_words, 4), (bs, n_chunks), dict
 		"""
@@ -150,6 +162,7 @@ class RAGVT5(torch.nn.Module):
 		assert overlap >= 0, "overlap should be a non-negative integer."
 		assert overlap < chunk_size, "overlap should be less than chunk_size."
 		bs = len(words)
+		question_id = kwargs.get("question_id", None)
 
 		# Extract layout_boxes and layout_labels from layout_info
 		if layout_info != [[]]:
@@ -171,6 +184,7 @@ class RAGVT5(torch.nn.Module):
 			"n_chunks_per_page_dist": Counter(),
 			"n_chunks_per_doc_dist": Counter()
 		}
+		stats_examples = {key: {} for key in stats}
 
 		def make_chunks(_words, _boxes, _p, words_lst, boxes_lst, p_lst) -> int:
 			prev_chunk_size = 0
@@ -188,12 +202,18 @@ class RAGVT5(torch.nn.Module):
 					words_lst[-1].extend(chunk_words[overlap:])
 					boxes_lst[-1].extend(chunk_boxes[overlap:])
 					stats["chunk_size_dist"][prev_chunk_size] -= 1
+					try:
+						stats_examples["chunk_size_dist"][prev_chunk_size].remove(f"{question_id[b]}_p{p}")
+					except ValueError:
+						pass
 					stats["chunk_size_dist"][this_chunk_size] += 1
+					self.stat_add_example(stats_examples["chunk_size_dist"], this_chunk_size, f"{question_id[b]}_p{p}")
 				else:
 					p_lst.append(_p)
 					words_lst.append(chunk_words)
 					boxes_lst.append(chunk_boxes)
 					stats["chunk_size_dist"][len(chunk_words)] += 1
+					self.stat_add_example(stats_examples["chunk_size_dist"], len(chunk_words), f"{question_id[b]}_p{p}")
 					n_chunks += 1
 				prev_chunk_size = this_chunk_size
 			return n_chunks
@@ -223,7 +243,9 @@ class RAGVT5(torch.nn.Module):
 					batch_layout_labels_chunks.append(10) # 10 = "text"
 					stats["chunk_size_dist"][len(page_words)] += 1
 					stats["n_chunks_per_page_dist"][1] += 1
-					stats["n_chunks_per_doc_dist"][1] += 1
+					batch_n_chunks += 1
+					self.stat_add_example(stats_examples["chunk_size_dist"], len(page_words), f"{question_id[b]}_p{p}")
+					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], 1, f"{question_id[b]}_p{p}")
 				elif not (batch_layout_boxes and batch_layout_boxes[p]): # (AnyConfOracle is included here)
 					# Else, if no layout, make chunks inside the page
 					page_n_chunks = make_chunks(
@@ -233,6 +255,7 @@ class RAGVT5(torch.nn.Module):
 					batch_layout_labels_chunks.extend([10] * page_n_chunks) # 10 = "text"
 					batch_n_chunks += page_n_chunks
 					stats["n_chunks_per_page_dist"][page_n_chunks] += 1
+					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], page_n_chunks, f"{question_id[b]}_p{p}")
 				else:
 					# Else, if layout, make chunks inside the layout boxes
 					page_layout_boxes = batch_layout_boxes[p]
@@ -258,11 +281,13 @@ class RAGVT5(torch.nn.Module):
 						page_n_chunks += layout_n_chunks
 						batch_layout_labels_chunks.extend([layout_label] * layout_n_chunks)
 						stats["n_chunks_per_layout_dist"][layout_n_chunks] += 1
+						self.stat_add_example(stats_examples["n_chunks_per_layout_dist"], layout_n_chunks, f"{question_id[b]}_p{p}")
 					batch_page_indices.extend([p] * len(layout_words_text))
 					batch_words_text_chunks.extend(layout_words_text)
 					batch_words_box_chunks.extend(layout_words_boxes)
 					batch_n_chunks += page_n_chunks
 					stats["n_chunks_per_page_dist"][page_n_chunks] += 1
+					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], page_n_chunks, f"{question_id[b]}_p{p}")
 			
 			# Join words and boxes for each chunk
 			for chunk_words, chunk_boxes in zip(batch_words_text_chunks, batch_words_box_chunks):
@@ -288,7 +313,8 @@ class RAGVT5(torch.nn.Module):
 			words_boxes_chunks.append(batch_words_box_chunks)
 			layout_labels_chunks.append(batch_layout_labels_chunks)
 			stats["n_chunks_per_doc_dist"][batch_n_chunks] += 1
-		return text_chunks, boxes_chunks, page_indices, words_text_chunks, words_boxes_chunks, layout_labels_chunks, stats
+			self.stat_add_example(stats_examples["n_chunks_per_doc_dist"], batch_n_chunks, f"{question_id[b]}")
+		return text_chunks, boxes_chunks, page_indices, words_text_chunks, words_boxes_chunks, layout_labels_chunks, stats, stats_examples
 
 	@no_grad()
 	def retrieve(
@@ -322,6 +348,7 @@ class RAGVT5(torch.nn.Module):
 		bs = len(questions)
 
 		stats = {}
+		stats_examples = {}
 
 		# Get layout boxes and labels
 		start_time = time()
@@ -372,28 +399,37 @@ class RAGVT5(torch.nn.Module):
 		stats["layout_time"] = time() - start_time
 
 		# Get chunks
-		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks, layout_labels_chunks, chunk_stats = \
-			self.get_chunks(words, boxes, layout_info, chunk_size, chunk_size_tol, overlap, return_words)
+		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks, layout_labels_chunks, chunk_stats, chunk_stats_examples = \
+			self.get_chunks(words, boxes, layout_info, chunk_size, chunk_size_tol, overlap, return_words, question_id=batch["question_id"])
 
 		# Compute some statistics
 		if layout_info != [[]]:
 			stats["n_layouts_per_page_dist"] = Counter()
 			stats["layouts_size_w_dist"] = Counter()
 			stats["layouts_size_h_dist"] = Counter()
-			# init from 0 layout map values
 			stats["layout_labels_dist"] = {layout_map[label]: 0 for label in layout_map}
+			stats_examples["n_layouts_per_page_dist"] = {}
+			stats_examples["layouts_size_w_dist"] = {}
+			stats_examples["layouts_size_h_dist"] = {}
 			for b in range(bs):
 				for p in range(len(layout_info[b])):
+					# n_layouts_per_page_dist
 					n_layouts = len(layout_info[b][p]["boxes"])
 					stats["n_layouts_per_page_dist"][n_layouts] += 1
+					self.stat_add_example(stats_examples["n_layouts_per_page_dist"], n_layouts, f"{batch['question_id'][b]}_p{p}")
+					# layouts_size_w_dist, layouts_size_h_dist
 					for box in layout_info[b][p]["boxes"]:
 						w = box[2] - box[0]
 						h = box[3] - box[1]
 						stats["layouts_size_w_dist"][w] += 1
 						stats["layouts_size_h_dist"][h] += 1
+						self.stat_add_example(stats_examples["layouts_size_w_dist"], w, f"{batch['question_id'][b]}_p{p}")
+						self.stat_add_example(stats_examples["layouts_size_h_dist"], h, f"{batch['question_id'][b]}_p{p}")
+					# layout_labels_dist
 					for label in layout_info[b][p]["labels"]:
 						stats["layout_labels_dist"][layout_map[label]] += 1
 		stats.update(chunk_stats)
+		stats_examples.update(chunk_stats_examples)
 
 		# Get text embeddings
 		text_embeddings = [] # (bs, n_chunks, hidden_size)
@@ -526,6 +562,8 @@ class RAGVT5(torch.nn.Module):
 			for c in range(len(top_k_layout_labels[b])):
 				label = top_k_layout_labels[b][c]
 				stats["layout_labels_topk_dist"][layout_map[label]] += 1
+
+		stats = {"stats": stats, "stats_examples": stats_examples}
 
 		return (
 			top_k_text, # (bs, k)
@@ -689,7 +727,8 @@ class RAGVT5(torch.nn.Module):
 				"words_boxes": top_k_words_boxes,
 				"top_k_layout_labels": top_k_layout_labels,
 				"steps": steps,
-				"stats": stats,
+				"stats": stats["stats"],
+				"stats_examples": stats["stats_examples"],
 				"retrieval_time": retrieval_time,
 				"generation_time": generation_time
 			}

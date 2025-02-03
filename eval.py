@@ -44,15 +44,25 @@ def save_local(
 			# save only relevant distribution
 			stat_relevant = dict()
 			# top 5 most common values
-			stat_relevant["most_common"] = {k: v for k, v in stat.most_common(5)}
+			count = {k: v for k, v in stat.most_common(5)}
+			examples = {k: eval_res["retrieval_stats_examples"][key][k] for k in count.keys()}
+			stat_relevant["most_common"] = {k: {"count": count[k], "examples": examples[k]} for k in count}
 			# top 5 least common values
-			stat_relevant["least_common"] = {k: v for k, v in stat.most_common()[:-6:-1]}
+			count = {k: v for k, v in stat.most_common()[:-6:-1]}
+			examples = {k: eval_res["retrieval_stats_examples"][key][k] for k in count.keys()}
+			stat_relevant["least_common"] = {k: {"count": count[k], "examples": examples[k]} for k in count}
 			# smallest 5 keys
-			stat_relevant["smallest"] = {k: stat[k] for k in sorted(stat.keys())[:5]}
+			count = {k: stat[k] for k in sorted(stat.keys())[:5]}
+			examples = {k: eval_res["retrieval_stats_examples"][key][k] for k in count.keys()}
+			stat_relevant["smallest"] = {k: {"count": count[k], "examples": examples[k]} for k in count}
 			# largest 5 keys
-			stat_relevant["largest"] = {k: stat[k] for k in sorted(stat.keys())[:-6:-1]}
+			count = {k: stat[k] for k in sorted(stat.keys())[:-6:-1]}
+			examples = {k: eval_res["retrieval_stats_examples"][key][k] for k in count.keys()}
+			stat_relevant["largest"] = {k: {"count": count[k], "examples": examples[k]} for k in count}
 			# top 5 keys around the mean
-			stat_relevant["around_mean"] = {k: stat[k] for k in sorted(stat.keys(), key=lambda x: abs(x-mean))[:5]}
+			count = {k: stat[k] for k in sorted(stat.keys(), key=lambda x: abs(x-mean))[:5]}
+			examples = {k: eval_res["retrieval_stats_examples"][key][k] for k in count.keys()}
+			stat_relevant["around_mean"] = {k: {"count": count[k], "examples": examples[k]} for k in count}
 
 			eval_res["retrieval_stats"][key] = {
 				"mean": mean,
@@ -96,7 +106,7 @@ def save_local(
 
 	metrics_file = os.path.join(config["save_dir"], "metrics", config["save_folder"], filename)
 	results_file = os.path.join(config["save_dir"], "results", config["save_folder"], filename)
-	save_json(metrics_file, save_data)
+	save_json(metrics_file, save_data, smart=True, smart_start_level=5)
 	if eval_res["results"]:
 		save_json(results_file, eval_res["results"])
 
@@ -196,6 +206,7 @@ def evaluate(
 	generation_time = 0
 	results = []
 	retrieval_stats = {}
+	retrieval_stats_examples = {}
 
 	all_pred_answers = []
 	model.eval()
@@ -298,10 +309,16 @@ def evaluate(
 		del retrieval["stats"]["layout_time"]
 		if b == 0:
 			retrieval_stats = retrieval["stats"]
+			retrieval_stats_examples = retrieval["stats_examples"]
 		else:
 			for key in retrieval_stats:
 				if isinstance(retrieval_stats[key], Counter):
 					retrieval_stats[key] += retrieval["stats"][key]
+					for k in retrieval["stats_examples"][key]:
+						if k not in retrieval_stats_examples[key]:
+							retrieval_stats_examples[key][k] = []
+						retrieval_stats_examples[key][k].extend(retrieval["stats_examples"][key][k])
+						retrieval_stats_examples[key][k] = retrieval_stats_examples[key][k][:model.n_stats_examples]
 				else:
 					for k in retrieval_stats[key]:
 						if isinstance(retrieval_stats[key][k], list):
@@ -341,6 +358,7 @@ def evaluate(
 				"chunk_score": avg_chunk_score,
 				"all_pred_answers": all_pred_answers,
 				"scores_by_samples": scores_by_samples,
+				"inf_time": time.time() - start_time,
 				"avg_load_time": avg_load_time,
 				"avg_layout_time": avg_layout_time,
 				"avg_retrieval_time": avg_retrieval_time,
@@ -350,12 +368,11 @@ def evaluate(
 				"total_retrieval_time": retrieval_time,
 				"total_generation_time": generation_time,
 				"retrieval_stats": retrieval_stats.copy(),
+				"retrieval_stats_examples": retrieval_stats_examples.copy(),
 				"results": results
 			}
 
 			# Save data
-			inf_time_f = time.time() - start_time
-			res["inf_time"] = inf_time_f
 			save_data = save_local(config, filename, res)
 
 			# Log data
@@ -370,7 +387,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"page_retrieval": "AnyConf", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 2,
@@ -379,13 +396,13 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "2",
+		"visible_devices": "1",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True, # distinguish layout labels for better retrieval
 		"save_folder": "8-layout_model",
-		"save_name_append": "layout"
+		"save_name_append": "stats_examples",
 	}
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)

@@ -181,11 +181,15 @@ class LayoutModel(torch.nn.Module):
 				bbx = self._detect_bboxes(mm.numpy())
 				boxes_.extend(bbx)
 			if self.distinguish_labels:
-				# Majority voting
+				# Majority voting excluding class 0
 				for box in boxes_:
 					xmin, ymin, xmax, ymax = box
 					segment_crop = img_seg[ymin:ymax, xmin:xmax]
-					label = np.argmax(np.bincount(segment_crop.flatten()))
+					segment_crop = segment_crop[segment_crop != 0]
+					if len(segment_crop) > 0:
+						label = np.argmax(np.bincount(segment_crop.flatten()))
+					else:
+						label = 0
 					labels_.append(label)
 			else:
 				labels_.extend([10]*len(bbx))

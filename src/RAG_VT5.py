@@ -235,6 +235,8 @@ class RAGVT5(torch.nn.Module):
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
 				if not isinstance(page_words, list):
 					page_boxes = page_boxes.tolist()
+				if len(page_boxes) > 0 and not isinstance(page_boxes[0], list):
+					page_boxes = [pbox.tolist() for pbox in page_boxes]
 				if self.page_retrieval == "oracle":
 					# If oracle, take the whole page as a chunk
 					batch_page_indices.append(p)

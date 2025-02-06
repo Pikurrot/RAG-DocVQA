@@ -1,4 +1,6 @@
 import os
+import sys
+import yaml
 import time
 import datetime
 import argparse
@@ -396,15 +398,51 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "1",
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True, # distinguish layout labels for better retrieval
+	}
+	extra_args = {
+		"visible_devices": "1",
 		"save_folder": "8-layout_model",
 		"save_name_append": "stats_examples",
+		"data_size": 1.0,
+		"log_media_interval": 10,
+		"return_scores_by_sample": True,
+		"return_answers": True,
+		"save_results": False,
+		"save_continuously": True
 	}
-	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
+	args.update(extra_args)
+
+	# Override args with yaml file if provided
+	if len(sys.argv) > 1 and sys.argv[1].endswith('.yml'):
+		yaml_path = sys.argv[1]
+		with open(yaml_path, 'r') as f:
+			yaml_data = yaml.safe_load(f)
+		# Flatten all top-level sub-dicts into a single dict
+		flattened_yaml = {}
+		for _, subdict in yaml_data.items():
+			if isinstance(subdict, dict):
+				flattened_yaml.update(subdict)
+		args.update(flattened_yaml)
+
+	# Parse additional CLI "key=value" overrides
+	for arg in sys.argv[2:]:
+		if '=' in arg:
+			k, v = arg.split('=', 1)
+			if v.lower() in ['true', 'false']:
+				v = (v.lower() == 'true')
+			elif v.isdigit():
+				v = int(v)
+			args[k] = v
+
+	if isinstance(args["visible_devices"], list):
+		os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in args["visible_devices"])
+	else:
+		os.environ["CUDA_VISIBLE_DEVICES"] = str(args["visible_devices"])
+
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	start_time = time.time()
@@ -417,23 +455,22 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	data_size = 1.0
+	data_size = config["data_size"]
 	dataset = build_dataset(config, split="val", size=data_size)
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model
 	print("Evaluating...")
 	evaluator = Evaluator(case_sensitive=False)
-	save_continuously = True
-	log_media_interval = (len(val_data_loader) // 10) if save_continuously else 1
+	log_media_interval = (len(val_data_loader) // config["log_media_interval"]) if config["save_continuously"] else 1
 	logger = LoggerEval(config, experiment_name, log_media_interval)
 	evaluate(
 		val_data_loader,
 		model, evaluator, logger,
-		return_scores_by_sample=True,
-		return_answers=True,
-		save_results=False,
-		save_continuously=save_continuously,
+		return_scores_by_sample=config["return_scores_by_sample"],
+		return_answers=config["return_answers"],
+		save_results=config["save_results"],
+		save_continuously=config["save_continuously"],
 		filename=filename,
 		chunk_num=config["chunk_num"],
 		chunk_size=config["chunk_size"],

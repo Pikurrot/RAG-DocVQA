@@ -1,0 +1,34 @@
+model:
+  model: RAGVT5
+  embed_model: BGE # BGE, VT5, BGE-M3, BGE-reranker
+  add_sep_token: False
+  # model_weights: /data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt
+
+data:
+  dataset: MP-DocVQA
+  page_retrieval: [Oracle, Concat, MaxConf, AnyConf, MaxConfPage, AnyConfPage, MajorPage, WeightMajorPage, AnyConfOracle]
+  batch_size: 20
+  layout_batch_size: 2
+
+retrieval:
+  chunk_num: 10
+  chunk_size: 60
+  chunk_size_tol: 0.2
+  overlap: 10
+  include_surroundings: 0
+  embed_weights: /data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820
+  
+layout_model:
+  layout_model_weights: cmarkea/dit-base-layout-detection
+  use_layout_labels: True
+
+runtime:
+  visible_devices: [1, 2, 3, 4, 5]
+  save_folder: 8-layout_model
+  save_name_append: stats_examples
+  data_size: 1.0
+  log_media_interval: 10
+  return_scores_by_sample: True
+  return_answers: True
+  save_results: False
+  save_continuously: True

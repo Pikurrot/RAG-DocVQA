@@ -1,7 +1,7 @@
 import torch
 import gc
 from transformers import AutoImageProcessor, BeitForSemanticSegmentation
-from typing import List, Tuple, Any
+from typing import List, Tuple
 from PIL import Image
 import numpy as np
 import cv2

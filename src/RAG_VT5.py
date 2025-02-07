@@ -78,6 +78,7 @@ class RAGVT5(torch.nn.Module):
 		self.generator.to(device)
 		if self.embed_model != "VT5":
 			self.bge_model.to(device)
+		self.layout_model.to(device)
 
 	def eval(self):
 		self.generator.eval()
@@ -174,10 +175,11 @@ class RAGVT5(torch.nn.Module):
 
 		text_chunks = [] # (bs, n_chunks)
 		boxes_chunks = [] # (bs, n_chunks, 4)
+		layout_labels_chunks = [] # (bs, n_chunks)
 		page_indices = [] # (bs, n_chunks)
 		words_text_chunks = [] # (bs, n_chunks, n_words)
 		words_boxes_chunks = [] # (bs, n_chunks, n_words, 4)
-		layout_labels_chunks = [] # (bs, n_chunks)
+		words_layout_labels_pages = [] # (bs, n_pages, n_words)
 		stats = {
 			"chunk_size_dist": Counter(),
 			"n_chunks_per_layout_dist": Counter(),
@@ -227,10 +229,11 @@ class RAGVT5(torch.nn.Module):
 				batch_layout_labels = None
 			batch_text_chunks = [] # (n_chunks,)
 			batch_box_chunks = [] # (n_chunks, 4)
+			batch_layout_labels_chunks = [] # (n_chunks,)
 			batch_page_indices = [] # (n_chunks,)
 			batch_words_text_chunks = [] # (n_chunks, n_words)
 			batch_words_box_chunks = [] # (n_chunks, n_words, 4)
-			batch_layout_labels_chunks = [] # (n_chunks,)
+			batch_words_layout_labels_pages = [] # (n_pages, n_words)
 			batch_n_chunks = 0
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
 				if not isinstance(page_words, list):
@@ -244,6 +247,7 @@ class RAGVT5(torch.nn.Module):
 						batch_words_text_chunks, batch_words_box_chunks, batch_page_indices
 					)
 					batch_layout_labels_chunks.extend([10] * page_n_chunks) # 10 = "text"
+					batch_words_layout_labels_pages.append([10] * len(page_words))
 					batch_n_chunks += page_n_chunks
 					stats["n_chunks_per_page_dist"][page_n_chunks] += 1
 					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], page_n_chunks, f"{question_id[b]}_p{p}")
@@ -255,15 +259,17 @@ class RAGVT5(torch.nn.Module):
 					layout_words_boxes = [] # (n_chunks, n_words, 4)
 					layout_indices = [] # (n_chunks,)
 					page_n_chunks = 0
+					page_words_layout_labels = ["text"] * len(page_words) # (n_words,)
 					for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
 						# Find words inside the layout box
 						words_inside = []
 						boxes_inside = []
-						for word, box in zip(page_words, page_boxes):
+						for i, (word, box) in enumerate(zip(page_words, page_boxes)):
 							contain_ratio = self.layout_model._containment_ratio(box, layout_box)
 							if contain_ratio > 0.5:
 								words_inside.append(word)
 								boxes_inside.append(box)
+								page_words_layout_labels[i] = layout_label
 						# Split the words inside the layout box into chunks
 						layout_n_chunks = make_chunks(
 							words_inside, boxes_inside, lb,
@@ -271,11 +277,13 @@ class RAGVT5(torch.nn.Module):
 						)
 						page_n_chunks += layout_n_chunks
 						batch_layout_labels_chunks.extend([layout_label] * layout_n_chunks)
+
 						stats["n_chunks_per_layout_dist"][layout_n_chunks] += 1
 						self.stat_add_example(stats_examples["n_chunks_per_layout_dist"], layout_n_chunks, f"{question_id[b]}_p{p}")
 					batch_page_indices.extend([p] * len(layout_words_text))
 					batch_words_text_chunks.extend(layout_words_text)
 					batch_words_box_chunks.extend(layout_words_boxes)
+					batch_words_layout_labels_pages.append(page_words_layout_labels)
 					batch_n_chunks += page_n_chunks
 					stats["n_chunks_per_page_dist"][page_n_chunks] += 1
 					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], page_n_chunks, f"{question_id[b]}_p{p}")
@@ -299,13 +307,14 @@ class RAGVT5(torch.nn.Module):
 
 			text_chunks.append(batch_text_chunks)
 			boxes_chunks.append(batch_box_chunks)
+			layout_labels_chunks.append(batch_layout_labels_chunks)
 			page_indices.append(batch_page_indices)
 			words_text_chunks.append(batch_words_text_chunks)
 			words_boxes_chunks.append(batch_words_box_chunks)
-			layout_labels_chunks.append(batch_layout_labels_chunks)
+			words_layout_labels_pages.append(batch_words_layout_labels_pages)
 			stats["n_chunks_per_doc_dist"][batch_n_chunks] += 1
 			self.stat_add_example(stats_examples["n_chunks_per_doc_dist"], batch_n_chunks, f"{question_id[b]}")
-		return text_chunks, boxes_chunks, page_indices, words_text_chunks, words_boxes_chunks, layout_labels_chunks, stats, stats_examples
+		return text_chunks, boxes_chunks, layout_labels_chunks, page_indices, words_text_chunks, words_boxes_chunks, words_layout_labels_pages, stats, stats_examples
 
 	@no_grad()
 	def retrieve(
@@ -390,7 +399,7 @@ class RAGVT5(torch.nn.Module):
 		stats["layout_time"] = time() - start_time
 
 		# Get chunks
-		text_chunks, box_chunks, page_indices, words_text_chunks, words_box_chunks, layout_labels_chunks, chunk_stats, chunk_stats_examples = \
+		text_chunks, box_chunks, layout_labels_chunks, page_indices, words_text_chunks, words_box_chunks, words_layout_labels_pages, chunk_stats, chunk_stats_examples = \
 			self.get_chunks(words, boxes, layout_info, chunk_size, chunk_size_tol, overlap, return_words, question_id=batch["question_id"])
 
 		# Compute some statistics
@@ -436,10 +445,10 @@ class RAGVT5(torch.nn.Module):
 		# Get top k chunks and boxes
 		top_k_text = []  # (bs, k)
 		top_k_boxes = []  # (bs, k, 4)
+		top_k_layout_labels = []  # (bs, k)
 		top_k_page_indices = []  # (bs, k)
 		top_k_words_text = []  # (bs, k, n_words)
 		top_k_words_boxes = []  # (bs, k, n_words, 4)
-		top_k_layout_labels = []  # (bs, k)
 
 		for b in range(bs):
 			k_min = min(k, len(similarities[b]))
@@ -448,8 +457,8 @@ class RAGVT5(torch.nn.Module):
 			# these do not contain surrounding words, just the retrieved chunks
 			top_k_text.append([text_chunks[b][i] for i in top_k])
 			top_k_boxes.append([box_chunks[b][i] for i in top_k])
-			top_k_page_indices.append([page_indices[b][i] for i in top_k])
 			top_k_layout_labels.append([layout_labels_chunks[b][i] for i in top_k])
+			top_k_page_indices.append([page_indices[b][i] for i in top_k])
 
 			# If return words (for generator), also include surrounding words
 			if return_words:
@@ -518,6 +527,14 @@ class RAGVT5(torch.nn.Module):
 				top_k_words_text.append(batch_top_k_words_text) # (bs, k, n_words)
 				top_k_words_boxes.append(batch_top_k_words_boxes)
 
+		top_k_words_layout_labels = [
+			[
+				[top_k_layout_labels[b][i]] * len(top_k_words_text[b][i])
+				for i in range(len(top_k_words_text[b]))
+			]
+			for b in range(bs)
+		] # (bs, k, n_words)
+
 		# Get image patches
 		top_k_patches = [] # (bs, k, h, w, 3)
 		for b in range(bs):
@@ -545,7 +562,8 @@ class RAGVT5(torch.nn.Module):
 			"similarities": similarities, # (bs, n_chunks)
 			"layout_info": layout_info, # (bs, n_pages)
 			"layout_segments": layout_segments, # (bs, n_pages, h, w)
-			"layout_info_raw": layout_info_raw # (bs, n_pages)
+			"layout_info_raw": layout_info_raw, # (bs, n_pages)
+			"words_layout_labels_pages": words_layout_labels_pages, # (bs, n_pages, n_words)
 		}
 
 		stats["layout_labels_topk_dist"] = {label: 0 for label in layout_map.values()}
@@ -559,11 +577,12 @@ class RAGVT5(torch.nn.Module):
 		return (
 			top_k_text, # (bs, k)
 			top_k_boxes, # (bs, k, 4)
+			top_k_layout_labels, # (bs, k)
 			top_k_patches, # (bs, k, h, w, 3)
 			top_k_page_indices, # (bs, k)
 			top_k_words_text, # (bs, k, n_words)
 			top_k_words_boxes, # (bs, k, n_words, 4)
-			top_k_layout_labels, # (bs, k)
+			top_k_words_layout_labels, # (bs, k, n_words)
 			steps, # dict
 			stats # dict
 		)
@@ -584,11 +603,12 @@ class RAGVT5(torch.nn.Module):
 		(
 			top_k_text,
 			top_k_boxes,
+			top_k_layout_labels,
 			top_k_patches,
 			top_k_page_indices,
 			top_k_words_text,
 			top_k_words_boxes,
-			top_k_layout_labels,
+			top_k_words_layout_labels,
 			steps,
 			stats
 		) = self.retrieve(batch, chunk_num, chunk_size, chunk_size_tol, overlap, True, include_surroundings)
@@ -603,6 +623,7 @@ class RAGVT5(torch.nn.Module):
 			new_batch["questions"] = batch["questions"].copy() # (bs,)
 			new_batch["words"] = [flatten(b, self.add_sep_token) for b in top_k_words_text]  # (bs, k * n_words)
 			new_batch["boxes"] = [flatten(b, self.add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
+			new_batch["layout_labels"] = [flatten(b, self.add_sep_token) for b in top_k_words_layout_labels]  # (bs, k * n_words)
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
@@ -611,7 +632,7 @@ class RAGVT5(torch.nn.Module):
 			results = []  # (bs, 4, k)
 			max_confidence_indices = []
 			for b in range(bs):  # iterate over batch
-				words, boxes, patches = [], [], []
+				words, boxes, layout_labels, patches = [], [], [], []
 				if self.page_retrieval in ["maxconf", "anyconf", "anyconforacle"]:
 					# Prepare the data for each chunk
 					for i in range(len(top_k_words_text[b])):
@@ -619,6 +640,7 @@ class RAGVT5(torch.nn.Module):
 						if top_k_words_text[b][i] != []:
 							words.append(top_k_words_text[b][i])
 							boxes.append(top_k_words_boxes[b][i])
+							layout_labels.append(top_k_words_layout_labels[b][i])
 							patches.append(top_k_patches[b][i])
 				elif self.page_retrieval in ["maxconfpage", "anyconfpage"]:
 					# Prepare the data for the page corresponding to each chunk
@@ -626,6 +648,7 @@ class RAGVT5(torch.nn.Module):
 						page_idx = top_k_page_indices[b][i]
 						words.append(batch["words"][b][page_idx])
 						boxes.append(batch["boxes"][b][page_idx])
+						layout_labels.append(steps["words_layout_labels_pages"][b][page_idx])
 						patches.append(batch["images"][b][page_idx])
 
 				if len(words) == 0:
@@ -638,6 +661,7 @@ class RAGVT5(torch.nn.Module):
 				new_batch["questions"] = [batch["questions"][b]] * len(words)  # (k,)
 				new_batch["words"] = words  # (k, n_words)
 				new_batch["boxes"] = boxes  # (k, n_words, 4)
+				new_batch["layout_labels"] = layout_labels  # (k, n_words)
 				new_batch["images"] = patches  # (k, h, w, 3)
 				new_batch["answers"] = [batch["answers"][b]] * len(words)
 				# This treats k as batch size
@@ -697,6 +721,7 @@ class RAGVT5(torch.nn.Module):
 			new_batch["questions"] = batch["questions"].copy()  # (bs,)
 			new_batch["words"] = [batch["words"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)
 			new_batch["boxes"] = [batch["boxes"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words, 4)
+			new_batch["layout_labels"] = [steps["words_layout_labels_pages"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)
 			new_batch["images"] = [batch["images"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			# This treats bs as batch size

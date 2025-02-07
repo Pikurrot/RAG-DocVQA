@@ -237,8 +237,10 @@ def flatten(
 			if i > 0:
 				if isinstance(sublist[0], str): # for words
 					flat_list.append("<sep>")
-				else: # for boxes
+				elif isinstance(sublist[0], list): # for boxes
 					flat_list.append([0, 0, 0, 0])
+				elif isinstance(sublist[0], int): # for layout labels
+					flat_list.append(0)
 			flat_list.extend(sublist)
 		return flat_list
 	else:

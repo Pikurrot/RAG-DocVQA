@@ -259,7 +259,7 @@ class RAGVT5(torch.nn.Module):
 					layout_words_boxes = [] # (n_chunks, n_words, 4)
 					layout_indices = [] # (n_chunks,)
 					page_n_chunks = 0
-					page_words_layout_labels = ["text"] * len(page_words) # (n_words,)
+					page_words_layout_labels = [10] * len(page_words) # (n_words,)
 					for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
 						# Find words inside the layout box
 						words_inside = []
@@ -287,6 +287,14 @@ class RAGVT5(torch.nn.Module):
 					batch_n_chunks += page_n_chunks
 					stats["n_chunks_per_page_dist"][page_n_chunks] += 1
 					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], page_n_chunks, f"{question_id[b]}_p{p}")
+			
+			# If oracle, take the whole page as a chunk (actually join the chunks of the page)
+			if self.page_retrieval == "oracle":
+				batch_words_text_chunks = [flatten(batch_words_text_chunks)]
+				batch_words_box_chunks = [flatten(batch_words_box_chunks)]
+				batch_layout_labels_chunks = [10]
+				batch_page_indices = [0]
+				batch_n_chunks = 1
 			
 			# Join words and boxes for each chunk
 			for chunk_words, chunk_boxes in zip(batch_words_text_chunks, batch_words_box_chunks):

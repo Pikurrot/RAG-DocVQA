@@ -391,8 +391,8 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 2,
+		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"layout_batch_size": 4,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -406,7 +406,7 @@ if __name__ == "__main__":
 	extra_args = {
 		"visible_devices": "1",
 		"save_folder": "8-layout_model",
-		"save_name_append": "layout_chunking",
+		"save_name_append": "stats_examples",
 		"data_size": 1.0,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,

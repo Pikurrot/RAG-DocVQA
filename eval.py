@@ -389,7 +389,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 20, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 2,
@@ -406,7 +406,7 @@ if __name__ == "__main__":
 	extra_args = {
 		"visible_devices": "1",
 		"save_folder": "8-layout_model",
-		"save_name_append": "stats_examples",
+		"save_name_append": "layout_chunking",
 		"data_size": 1.0,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,

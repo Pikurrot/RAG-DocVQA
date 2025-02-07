@@ -230,26 +230,15 @@ class RAGVT5(torch.nn.Module):
 			batch_page_indices = [] # (n_chunks,)
 			batch_words_text_chunks = [] # (n_chunks, n_words)
 			batch_words_box_chunks = [] # (n_chunks, n_words, 4)
-			batch_layout_labels_chunks = []
+			batch_layout_labels_chunks = [] # (n_chunks,)
 			batch_n_chunks = 0
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
 				if not isinstance(page_words, list):
 					page_boxes = page_boxes.tolist()
 				if len(page_boxes) > 0 and not isinstance(page_boxes[0], list):
 					page_boxes = [pbox.tolist() for pbox in page_boxes]
-				if self.page_retrieval == "oracle":
-					# If oracle, take the whole page as a chunk
-					batch_page_indices.append(p)
-					batch_words_text_chunks.append(page_words)
-					batch_words_box_chunks.append(page_boxes)
-					batch_layout_labels_chunks.append(10) # 10 = "text"
-					stats["chunk_size_dist"][len(page_words)] += 1
-					stats["n_chunks_per_page_dist"][1] += 1
-					batch_n_chunks += 1
-					self.stat_add_example(stats_examples["chunk_size_dist"], len(page_words), f"{question_id[b]}_p{p}")
-					self.stat_add_example(stats_examples["n_chunks_per_page_dist"], 1, f"{question_id[b]}_p{p}")
-				elif not (batch_layout_boxes and batch_layout_boxes[p]): # (AnyConfOracle is included here)
-					# Else, if no layout, make chunks inside the page
+				if not (batch_layout_boxes and batch_layout_boxes[p]):
+					# If no layout, make chunks inside the page
 					page_n_chunks = make_chunks(
 						page_words, page_boxes, p,
 						batch_words_text_chunks, batch_words_box_chunks, batch_page_indices
@@ -307,7 +296,7 @@ class RAGVT5(torch.nn.Module):
 			if not return_words:
 				batch_words_text_chunks = []
 				batch_words_box_chunks = []
-			
+
 			text_chunks.append(batch_text_chunks)
 			boxes_chunks.append(batch_box_chunks)
 			page_indices.append(batch_page_indices)
@@ -622,7 +611,6 @@ class RAGVT5(torch.nn.Module):
 			results = []  # (bs, 4, k)
 			max_confidence_indices = []
 			for b in range(bs):  # iterate over batch
-
 				words, boxes, patches = [], [], []
 				if self.page_retrieval in ["maxconf", "anyconf", "anyconforacle"]:
 					# Prepare the data for each chunk

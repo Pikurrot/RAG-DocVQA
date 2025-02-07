@@ -6,8 +6,8 @@ model:
 
 data:
   dataset: MP-DocVQA
-  page_retrieval: [Oracle, Concat, MaxConf, AnyConf, MaxConfPage, AnyConfPage, MajorPage, WeightMajorPage, AnyConfOracle]
-  batch_size: 20
+  page_retrieval: [Oracle, MaxConfPage, AnyConfPage, MajorPage, WeightMajorPage]
+  batch_size: [30, 15, 15, 15, 15]
   layout_batch_size: 2
 
 retrieval:

@@ -1,48 +1,40 @@
 #!/bin/bash
-
 CONFIG="configs/multi_eval.yml"
 
-# 1) Parse arrays using helper python script (same as before)
 PAGE_RET_ARRAY=($(python src/parse_yml.py "$CONFIG" data page_retrieval))
+BS_ARRAY=($(python src/parse_yml.py "$CONFIG" data batch_size))
 GPU_ARRAY=($(python src/parse_yml.py "$CONFIG" runtime visible_devices))
 
-# Function to see if a GPU is busy
-# We assume that if there's any screen whose name includes "_gpuX_eval" then GPU X is busy
+# Function to detect if a GPU is busy
 function is_gpu_busy() {
     local gpu_id=$1
-    # check if screen with "_gpu<gpu_id>_eval" is running
     screen -ls | grep -q "_gpu${gpu_id}_eval"
-    return $?  # grep returns 0 if found (meaning busy)
+    return $?
 }
 
-i=0
-for pr in "${PAGE_RET_ARRAY[@]}"; do
-  
+gpu_queue_index=0
+for i in "${!PAGE_RET_ARRAY[@]}"; do
+  pr="${PAGE_RET_ARRAY[$i]}"
+  bs="${BS_ARRAY[$i]}"
+
   while true; do
-    gpu_index=$((i % ${#GPU_ARRAY[@]}))
+    gpu_index=$((gpu_queue_index % ${#GPU_ARRAY[@]}))
     gpu="${GPU_ARRAY[$gpu_index]}"
 
-    # Is GPU 'gpu' busy?
     if ! is_gpu_busy "$gpu"; then
-      # Not busy, so launch
       screen_name="${pr}_gpu${gpu}_eval"
-      echo "Launching page_retrieval=$pr on GPU $gpu (screen $screen_name)"
-      screen -L -dmS "$screen_name" python eval.py "$CONFIG" page_retrieval="$pr" visible_devices="$gpu"
-      # Move to next GPU for next job
-      ((i++))
-      # Break out of the while loop to move to next retrieval
+      echo "Launching page_retrieval=$pr batch_size=$bs on GPU $gpu (screen $screen_name)"
+      screen -L -dmS "$screen_name" \
+        python eval.py "$CONFIG" page_retrieval="$pr" batch_size="$bs" visible_devices="$gpu"
+      ((gpu_queue_index++))
       break
     else
-      # GPU is busy, wait a bit and try again
       sleep 5
     fi
   done
-
 done
 
-# Optionally wait until *all* screens finish
-# This will block your shell until there are no "_eval" screens left
-# (not strictly required if you're okay to let them run in the background)
+# Optional final wait loop
 while true; do
   RUNNING_SCREENS=$(screen -ls | grep "_eval" | wc -l)
   if [ "$RUNNING_SCREENS" -eq 0 ]; then

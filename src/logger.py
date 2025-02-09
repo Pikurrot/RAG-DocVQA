@@ -3,7 +3,7 @@ import datetime
 import wandb as wb
 import numpy as np
 import matplotlib.pyplot as plt
-from src.RAG_VT5 import RAGVT5
+from RAGVT5 import RAGVT5
 
 class Logger:
 

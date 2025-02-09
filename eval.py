@@ -14,7 +14,7 @@ from src.MP_DocVQA import mpdocvqa_collate_fn
 from src.metrics import Evaluator
 from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
-from src.RAG_VT5 import RAGVT5
+from RAGVT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
 from src.logger import LoggerEval
 from typing import Union

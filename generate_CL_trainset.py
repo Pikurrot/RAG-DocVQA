@@ -10,7 +10,7 @@ from src.MP_DocVQA import mpdocvqa_collate_fn
 from src.metrics import Evaluator
 from src.utils import load_config
 from src.build_utils import build_model, build_dataset
-from src.RAG_VT5 import RAGVT5
+from RAGVT5 import RAGVT5
 
 
 def build_CL_trainset(

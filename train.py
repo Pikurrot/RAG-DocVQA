@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from src.RAG_VT5 import RAGVT5
+from RAGVT5 import RAGVT5
 from src.metrics import Evaluator
 from src.logger import Logger
 from src.utils import seed_everything, load_config

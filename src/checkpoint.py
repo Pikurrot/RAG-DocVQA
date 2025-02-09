@@ -1,6 +1,6 @@
 import os
 from src.utils import save_yaml
-from src.RAG_VT5 import RAGVT5
+from RAGVT5 import RAGVT5
 
 def save_model(
 		model: RAGVT5,

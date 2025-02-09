@@ -3,7 +3,7 @@ import datetime
 import wandb as wb
 import numpy as np
 import matplotlib.pyplot as plt
-from RAGVT5 import RAGVT5
+from src.RAGVT5 import RAGVT5
 
 class Logger:
 
@@ -90,11 +90,13 @@ class Logger:
 class LoggerEval:
 	
 	def __init__(self, config: dict, experiment_name: str, log_media_interval: int = 1):
+		self.log_wandb = config["log_wandb"]
 		self.log_folder = config["save_dir"]
 		self.experiment_name = experiment_name
 		self.log_media_interval = log_media_interval
 		self.log_media_counter = 0
-		self.logger = wb.init(project="RAG-DocVQA-Eval", name=self.experiment_name, dir=self.log_folder, config=config)
+		if self.log_wandb:
+			self.logger = wb.init(project="RAG-DocVQA-Eval", name=self.experiment_name, dir=self.log_folder, config=config)
 		self._print_config(config)
 	
 	def _print_config(self, config: dict):
@@ -104,14 +106,15 @@ class LoggerEval:
 		print("}\n")
 
 	def log(self, *args, **kwargs):
-		self.logger.log(*args, **kwargs)
+		if self.log_wandb:
+			self.logger.log(*args, **kwargs)
 
 	def parse_and_log(self, log_data):
 		self.log_media_counter += 1
 		for key, value in log_data.items():
 			if isinstance(value, (int, float)):
 				# Log numerical value directly
-				self.logger.log({key: value})
+				self.log({key: value})
 			elif isinstance(value, dict) and "values" in value and "config" in value:
 				if (self.log_media_counter == self.log_media_interval) or (self.log_media_counter == -1):
 					self.log_media_counter = -1
@@ -135,7 +138,7 @@ class LoggerEval:
 		ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, textprops={'fontsize': 14})
 		ax.axis('equal')
 		
-		self.logger.log({key: wb.Image(fig)})
+		self.log({key: wb.Image(fig)})
 		plt.close(fig)
 
 	def log_spider_chart(self, key, values_list, legend=None, log_scale=False):
@@ -162,6 +165,6 @@ class LoggerEval:
 		ax.set_xticklabels(categories, fontsize=14)
 		ax.legend(loc="upper left", fontsize=14, bbox_to_anchor=(0.5, -0.1))
 		
-		self.logger.log({key: wb.Image(fig)})
+		self.log({key: wb.Image(fig)})
 		fig.subplots_adjust(bottom=0.2)
 		plt.close(fig)

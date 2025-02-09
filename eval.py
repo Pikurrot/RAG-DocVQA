@@ -14,7 +14,7 @@ from src.MP_DocVQA import mpdocvqa_collate_fn
 from src.metrics import Evaluator
 from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
-from RAGVT5 import RAGVT5
+from src.RAGVT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
 from src.logger import LoggerEval
 from typing import Union
@@ -231,12 +231,7 @@ def evaluate(
 		elif model_name == "RAGVT5":
 			_, pred_answers, _, pred_answers_conf, retrieval = model.inference(
 				batch,
-				return_retrieval=True,
-				chunk_num=kwargs.get("chunk_num", 5),
-				chunk_size=kwargs.get("chunk_size", 30),
-				chunk_size_tol=kwargs.get("chunk_size_tol", 0.15),
-				overlap=kwargs.get("overlap", 0),
-				include_surroundings=kwargs.get("include_surroundings", 10)
+				return_retrieval=True
 			)
 			pred_answer_pages = retrieval["page_indices"]
 
@@ -391,7 +386,7 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 4, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 4,
 		"chunk_num": 10,
 		"chunk_size": 60,
@@ -399,15 +394,16 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
+		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True, # distinguish layout labels for better retrieval
 	}
 	extra_args = {
-		"visible_devices": "1",
+		"visible_devices": "0",
 		"save_folder": "8-layout_model",
 		"save_name_append": "stats_examples",
 		"data_size": 1.0,
+		"log_wandb": False,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,
@@ -475,9 +471,5 @@ if __name__ == "__main__":
 		save_results=config["save_results"],
 		save_continuously=config["save_continuously"],
 		filename=filename,
-		chunk_num=config["chunk_num"],
-		chunk_size=config["chunk_size"],
-		overlap=config["overlap"],
-		include_surroundings=config["include_surroundings"],
 		start_time=start_time
 	)

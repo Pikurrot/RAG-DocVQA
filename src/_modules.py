@@ -6,14 +6,13 @@ import cv2
 import gc
 from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
 from sentence_transformers import SentenceTransformer
-from torch.nn import LayerNorm as BertLayerNorm
+from torch.nn import LayerNorm as BertLayerNorm, CrossEntropyLoss
 from typing import Optional, Any, Dict, List, Tuple, Literal
 from collections import Counter
 from PIL import Image
 from time import time
 from src.utils import containment_ratio
 from src._model_utils import mean_pooling
-from src.VT5 import VT5ForConditionalGeneration
 
 class CustomT5Config(T5Config):
 	def __init__(self, max_2d_position_embeddings=1024,  **kwargs):
@@ -122,6 +121,37 @@ class VisualEmbeddings(nn.Module):
 		return vis_embeddings, vis_attention_mask
 
 
+# For the Hi-VT5 model
+class PageRetrievalModule(nn.Module):
+
+	def __init__(self, config):
+		super(PageRetrievalModule, self).__init__()
+
+		self.page_retrieval = nn.Linear(config.max_doc_pages * config.page_tokens * config.hidden_size, config.max_doc_pages)
+		# TODO Check if BinaryCrossEntropy allows to extend to longer sequences.
+
+		if config.page_retrieval_config['loss'].lower() in ['ce', 'crossentropy', 'crossentropyloss']:
+			self.retrieval_criterion = CrossEntropyLoss()
+
+		self.retrieval_loss_weight = config.page_retrieval_config['loss_weight']
+
+	def forward(self, document_embeddings, answer_page_idx):
+		document_embeddings = document_embeddings.view([len(document_embeddings), -1])
+		# document_embeddings = F.pad(document_embeddings, (0, self.page_retrieval.in_features-document_embeddings.shape[-1]), "constant", 0)  # In case is the last batch
+
+		try:
+			ret_logits = self.page_retrieval(document_embeddings)  # 10*2*512
+
+		except:
+			pad_document_embeddings = torch.zeros([len(document_embeddings), self.page_retrieval.in_features], dtype=document_embeddings.dtype, device=document_embeddings.device)
+			pad_document_embeddings[:, :document_embeddings.shape[-1]] = document_embeddings
+			ret_logits = self.page_retrieval(pad_document_embeddings.to())  # 10*2*512
+
+		ret_loss = self.retrieval_criterion(ret_logits, answer_page_idx) * self.retrieval_loss_weight if answer_page_idx is not None else None
+
+		return ret_loss, ret_logits
+
+
 class StatComponent:
 	def __init__(self, config: dict):
 		self.compute_stats = config["compute_stats"]
@@ -207,14 +237,15 @@ class LayoutModel(torch.nn.Module, StatComponent):
 	}
 
 	def __init__(self, config: dict):
-		super(LayoutModel, self).__init__()
+		torch.nn.Module.__init__(self)
+		StatComponent.__init__(self, config)
 
 		# Load config
 		self.model_path = config.get("layout_model_weights", "cmarkea/dit-base-layout-detection")
 		self.device = config["device"]
 		self.cache_dir = config["cache_dir"]
 		self.distinguish_labels = config["use_layout_labels"]
-		self.layout_bs = config["layout_bs"]
+		self.layout_bs = config["layout_batch_size"]
 
 		# Load layout model
 		self.processor = AutoImageProcessor.from_pretrained(self.model_path, cache_dir=self.cache_dir)
@@ -457,15 +488,15 @@ class LayoutModel(torch.nn.Module, StatComponent):
 					# n_layouts_per_page_dist
 					n_layouts = len(layout_info[b][p]["boxes"])
 					self.stats["n_layouts_per_page_dist"][n_layouts] += 1
-					self.stat_add_example(self.stats_examples["n_layouts_per_page_dist"], n_layouts, f"{question_id[b]}_p{p}")
+					self.stat_add_example("n_layouts_per_page_dist", n_layouts, f"{question_id[b]}_p{p}")
 					# layouts_size_w_dist, layouts_size_h_dist
 					for box in layout_info[b][p]["boxes"]:
 						w = box[2] - box[0]
 						h = box[3] - box[1]
 						self.stats["layouts_size_w_dist"][w] += 1
 						self.stats["layouts_size_h_dist"][h] += 1
-						self.stat_add_example(self.stats_examples["layouts_size_w_dist"], w, f"{question_id[b]}_p{p}")
-						self.stat_add_example(self.stats_examples["layouts_size_h_dist"], h, f"{question_id[b]}_p{p}")
+						self.stat_add_example("layouts_size_w_dist", w, f"{question_id[b]}_p{p}")
+						self.stat_add_example("layouts_size_h_dist", h, f"{question_id[b]}_p{p}")
 					# layout_labels_dist
 					for label in layout_info[b][p]["labels"]:
 						self.stats["layout_labels_dist"][LayoutModel.layout_map[label]] += 1
@@ -684,7 +715,7 @@ class Embedder:
 	def __init__(
 			self,
 			config: dict, 
-			language_model: Optional[VT5ForConditionalGeneration]=None
+			language_model: Optional[Any]=None
 	):
 		# Load config
 		self.embed_model = config.get("embed_model", "VT5")
@@ -749,7 +780,7 @@ class Retriever(StatComponent):
 	def __init__(self, config: dict):
 		# Load config
 		super(Retriever, self).__init__(config)
-		self.k = config["n_chunks"]
+		self.k = config["chunk_num"]
 		self.include_surroundings = config["include_surroundings"]
 		if self.compute_stats:
 			self.stats["layout_labels_topk_dist"] = {label: 0 for label in LayoutModel.layout_map.values()}
@@ -804,7 +835,8 @@ class Retriever(StatComponent):
 			page_words_boxes = {}            # page_idx -> list of all boxes on that page
 			chunk_word_positions = {}        # page_idx -> {chunk_idx: (start_pos, end_pos)}
 			included_word_indices = {}       # page_idx -> set of word indices already included
-			total_chunks = len(top_k_layout_labels[b])
+
+			total_chunks = len(similarities[b])
 
 			# 	Build word lists and chunk positions per page
 			for i in range(total_chunks):
@@ -812,7 +844,7 @@ class Retriever(StatComponent):
 				if page_idx not in page_words_text:
 					page_words_text[page_idx] = []
 					page_words_boxes[page_idx] = []
-					chunk_word_positions[page_idx][i] = {}
+					chunk_word_positions[page_idx] = {}
 					included_word_indices[page_idx] = set()
 
 				words_in_chunk = words_text_chunks[b][i]
@@ -834,7 +866,12 @@ class Retriever(StatComponent):
 			for i in top_k:
 				i = i.item()
 				page_idx = page_indices[b][i]
-				(start_pos, end_pos) = chunk_word_positions[page_idx][i]
+				try:
+					(start_pos, end_pos) = chunk_word_positions[page_idx][i]
+				except KeyError as e:
+					print(f"Page index: {page_idx}, Chunk index: {i}")
+					print(f"Chunk word positions: {chunk_word_positions}")
+					raise e
 
 				# Determine the range of word indices to include
 				surround_start = max(0, start_pos - self.include_surroundings)

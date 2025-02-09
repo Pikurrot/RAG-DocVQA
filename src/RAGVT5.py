@@ -11,10 +11,8 @@ import numpy as np
 from time import time
 from collections import Counter
 
-class RAGVT5(torch.nn.Module):
+class RAGVT5:
 	def __init__(self, config: dict):
-		super(RAGVT5, self).__init__()
-
 		# Load config
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
 		self.embed_path = config.get("embed_weights", None)

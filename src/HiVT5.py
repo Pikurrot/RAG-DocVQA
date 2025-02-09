@@ -9,7 +9,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from transformers.modeling_outputs import Seq2SeqLMOutput, ModelOutput, BaseModelOutput
-from src._modules import CustomT5Config, SpatialEmbeddings, VisualEmbeddings, RetrievalModule
+from src._modules import CustomT5Config, SpatialEmbeddings, VisualEmbeddings, PageRetrievalModule
 
 import transformers.models.t5.modeling_t5
 """ START - FOR GREEDY SEARCH """
@@ -41,7 +41,7 @@ class HiVT5(T5ForConditionalGeneration):
 
 		self.spatial_embeddings = SpatialEmbeddings(config)
 		self.visual_embeddings = VisualEmbeddings(config)
-		self.retrieval_module = RetrievalModule(config)
+		self.retrieval_module = PageRetrievalModule(config)
 
 	def _prepare_encoder_decoder_kwargs_for_generation(
 			self,

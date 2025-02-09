@@ -3,7 +3,7 @@ from torch import no_grad
 from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
 from src.LayoutModel import LayoutModel, layout_map
-from src ._modules import CustomT5Config, Chunker
+from src ._modules import CustomT5Config, Chunker, Embedder
 from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any, List
@@ -17,24 +17,20 @@ class RAGVT5(torch.nn.Module):
 		super(RAGVT5, self).__init__()
 
 		# Load config
-		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
-		self.embed_path = config.get("embed_weights", None)
+		self.model_weights = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
 		self.layout_model_weights = config.get("layout_model_weights", None)
 		self.layout_bs = config.get("layout_batch_size", 1)
-		print(f"Loading model from {self.model_path}")
-		print(f"Loading embedding model from {self.embed_path}")
-		print(f"Loading layout model from {self.layout_model_weights}")
 		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
 		self.embed_model = config.get("embed_model", "VT5")
 		self.add_sep_token = config.get("add_sep_token", False)
 		self.cache_dir = config.get("cache_dir", None)
-		print(f"Using {self.cache_dir} as cache folder")
 		self.use_layout_labels = config.get("use_layout_labels", False)
-		self.n_stats_examples = 5
-		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
+		t5_config = CustomT5Config.from_pretrained(self.model_weights, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})
+		print(f"Loading layout model from {self.layout_model_weights}")
+		print(f"Using {self.cache_dir} as cache folder")
 
 		# Load components
 		#	Layout model
@@ -47,24 +43,11 @@ class RAGVT5(torch.nn.Module):
 		self.chunker = Chunker(config)
 
 		# 	Embedder
-		if self.embed_model == "VT5":
-			self.embedding_dim = 768
-		else:
-			if self.embed_model == "BGE":
-				if self.embed_path is None:
-					self.embed_path = "BAAI/bge-small-en-v1.5"
-				self.embedding_dim = 384
-			elif self.embed_model == "BGE-M3":
-				self.embed_path = "BAAI/bge-m3"
-				self.embedding_dim = 1024
-			elif self.embed_model == "BGE-reranker":
-				self.embed_path = "BAAI/bge-reranker-v2-m3"
-				self.embedding_dim = 1024
-			self.bge_model = SentenceTransformer(self.embed_path, cache_folder=self.cache_dir)
+		self.embedder = Embedder(config, language_model=self.generator.language_backbone if self.embed_model == "VT5" else None)
 
 		# 	Generator
 		self.generator = VT5ForConditionalGeneration.from_pretrained(
-			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
+			self.model_weights, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
 		)
 		self.generator.load_config(config)
 		if self.add_sep_token:
@@ -78,8 +61,7 @@ class RAGVT5(torch.nn.Module):
 	def to(self, device: Any):
 		self.device = device
 		self.generator.to(device)
-		if self.embed_model != "VT5":
-			self.bge_model.to(device)
+		self.embedder.to(device)
 		self.layout_model.to(device)
 
 	def eval(self):
@@ -87,34 +69,6 @@ class RAGVT5(torch.nn.Module):
 
 	def train(self):
 		self.generator.train()
-
-	def stat_add_example(self, dct: dict, key: Any, example: Any):
-		"""
-		Add an example value to a list in a dictionary.
-		Used for retrieval stats examples.
-		"""
-		if key not in dct:
-			dct[key] = []
-		if len(dct[key]) < self.n_stats_examples:
-			dct[key].append(example)
-
-	@no_grad()
-	def embed(self, text: List[str]) -> torch.Tensor:
-		if not text:
-			return torch.empty(0, self.embedding_dim).to(self.device)
-		if self.embed_model == "VT5":
-			input_ids, attention_mask = self.generator.tokenizer(
-				text,
-				return_tensors="pt",
-				padding=True,
-				truncation=True
-			).values()
-			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
-			text_tokens_embeddings = self.generator.language_backbone.shared(input_ids)
-			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
-		else:
-			text_embeddings = self.bge_model.encode(text, convert_to_tensor=True)
-		return text_embeddings
 
 	def get_similarities(
 			self,
@@ -443,12 +397,10 @@ class RAGVT5(torch.nn.Module):
 		stats_examples.update(self.chunker.stats_examples)
 
 		# Get text embeddings
-		text_embeddings = [] # (bs, n_chunks, hidden_size)
-		for text_batch in text_chunks:
-			text_embeddings.append(self.embed(text_batch))
+		text_embeddings = self.embedder.embed_multi(text_chunks) # (bs, n_chunks, hidden_size)
 
 		# Get question embeddings
-		question_embeddings = self.embed(questions) # (bs, hidden_size)
+		question_embeddings = self.embedder.embed(questions) # (bs, hidden_size)
 
 		# Compute similarity
 		similarities = self.get_similarities(text_embeddings, question_embeddings)
@@ -487,7 +439,7 @@ class RAGVT5(torch.nn.Module):
 					if page_idx not in page_words_text:
 						page_words_text[page_idx] = []
 						page_words_boxes[page_idx] = []
-						chunk_word_positions[page_idx] = {}
+						chunk_word_positions[page_idx][i] = {}
 						included_word_indices[page_idx] = set()
 
 					words_in_chunk = words_text_chunks[b][i]

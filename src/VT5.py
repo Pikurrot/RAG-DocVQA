@@ -21,6 +21,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 
 	@classmethod
 	def from_pretrained(cls, model_path: str, **kwargs):
+		print(f"Loading model from {model_path}")
 		if model_path == "rubentito/vt5-base-spdocvqa":
 			model = super(VT5ForConditionalGeneration, cls).from_pretrained(model_path, **kwargs)
 		else:

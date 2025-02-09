@@ -414,7 +414,8 @@ if __name__ == "__main__":
 		"save_results": False,
 		"save_continuously": True,
 		"compute_stats": True,
-		"compute_stats_examples": True
+		"compute_stats_examples": True,
+		"n_stats_examples": 5,
 	}
 	args.update(extra_args)
 

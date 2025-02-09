@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import T5Config
-from transformers import AutoFeatureExtractor, AutoModel
+from transformers import T5Config, AutoFeatureExtractor, AutoModel
+from sentence_transformers import SentenceTransformer
 from torch.nn import LayerNorm as BertLayerNorm
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 from collections import Counter
 from src.utils import containment_ratio
+from src._model_utils import mean_pooling
+from src.VT5 import VT5ForConditionalGeneration
 
 class CustomT5Config(T5Config):
 	def __init__(self, max_2d_position_embeddings=1024,  **kwargs):
@@ -185,6 +187,7 @@ class StatComponent:
 
 class Chunker(StatComponent):
 	def __init__(self, config: dict):
+		# Load config
 		super(Chunker, self).__init__(config)
 		self.chunk_size = config["chunk_size"]
 		self.chunk_size_tol = config["chunk_size_tol"]
@@ -381,9 +384,59 @@ class Chunker(StatComponent):
 		return text_chunks, boxes_chunks
 
 
-class ChunkEmbedder:
-	pass
+class Embedder:
+	def __init__(
+			self,
+			config: dict, 
+			language_model: Optional[VT5ForConditionalGeneration]=None
+	):
+		# Load config
+		self.embed_model = config.get("embed_model", "VT5")
+		self.embed_weights = config.get("embed_weights", None)
+		self.device = config.get("device", "cuda")
+		self.cache_dir = config.get("cache_dir", None)
+		self.language_model = language_model
 
+		if self.embed_model == "VT5":
+			self.embedding_dim = 768
+			print(f"Using VT5 language backbone as embedding model")
+		else:
+			if self.embed_model == "BGE":
+				if self.embed_weights is None:
+					self.embed_weights = "BAAI/bge-small-en-v1.5"
+				self.embedding_dim = 384
+			elif self.embed_model == "BGE-M3":
+				self.embed_weights = "BAAI/bge-m3"
+				self.embedding_dim = 1024
+			elif self.embed_model == "BGE-reranker":
+				self.embed_weights = "BAAI/bge-reranker-v2-m3"
+				self.embedding_dim = 1024
+			self.bge_model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir)
+			print(f"Loading embedding model from {self.embed_weights}")
+
+	def to(self, device: Any):
+		if self.embed_model != "VT5":
+			self.bge_model.to(device)
+
+	def embed(self, text: List[str]) -> torch.Tensor:
+		if not text:
+			return torch.empty(0, self.embedding_dim).to(self.device)
+		if self.embed_model == "VT5":
+			input_ids, attention_mask = self.language_model.tokenizer(
+				text,
+				return_tensors="pt",
+				padding=True,
+				truncation=True
+			).values()
+			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
+			text_tokens_embeddings = self.language_model.language_backbone.shared(input_ids)
+			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
+		else:
+			text_embeddings = self.bge_model.encode(text, convert_to_tensor=True)
+		return text_embeddings
+
+	def embed_multi(self, text: List[List[str]]) -> List[torch.Tensor]:
+		return [self.embed(t) for t in text]
 
 class Retriever:
 	pass

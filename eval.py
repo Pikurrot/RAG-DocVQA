@@ -180,13 +180,14 @@ def evaluate(
 		model: Union[RAGVT5, Proxy_HiVT5],
 		evaluator: Evaluator,
 		logger: LoggerEval,
+		config: dict,
 		**kwargs
 ):
-	return_scores_by_sample = kwargs.get("return_scores_by_sample", False)
-	return_answers = kwargs.get("return_answers", False)
-	save_results = kwargs.get("save_results", False)
+	return_scores_by_sample = config["return_scores_by_sample"]
+	return_answers = config["return_answers"]
+	save_results = config["save_results"]
+	save_continuously = config["save_continuously"]
 	start_time = kwargs.get("start_time", time.time())
-	save_continuously = kwargs.get("save_continuously", False)
 	filename = kwargs.get("filename", "eval.json")
 	model_name = model.__class__.__name__
 	model_name = "Hi-VT5" if model_name == "Proxy_HiVT5" else model_name
@@ -384,7 +385,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 4, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 4,
@@ -466,10 +467,7 @@ if __name__ == "__main__":
 	evaluate(
 		val_data_loader,
 		model, evaluator, logger,
-		return_scores_by_sample=config["return_scores_by_sample"],
-		return_answers=config["return_answers"],
-		save_results=config["save_results"],
-		save_continuously=config["save_continuously"],
+		config,
 		filename=filename,
 		start_time=start_time
 	)

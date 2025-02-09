@@ -1,16 +1,18 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import T5Config, AutoFeatureExtractor, AutoModel
+import numpy as np
+import cv2
+import gc
+from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
 from sentence_transformers import SentenceTransformer
 from torch.nn import LayerNorm as BertLayerNorm
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple, Literal
 from collections import Counter
 from PIL import Image
-import numpy as np
+from time import time
 from src.utils import containment_ratio
 from src._model_utils import mean_pooling
-from src.LayoutModel import layout_map
 from src.VT5 import VT5ForConditionalGeneration
 
 class CustomT5Config(T5Config):
@@ -123,7 +125,7 @@ class VisualEmbeddings(nn.Module):
 class StatComponent:
 	def __init__(self, config: dict):
 		self.compute_stats = config["compute_stats"]
-		self.compute_stats_examples = config["compute_stats_examples"]
+		self.compute_stats_examples = config["compute_stats_examples"] and self.compute_stats
 		self.n_stats_examples = config["n_stats_examples"]
 		self.stats: Dict[str, Any] = {}
 		self.stats_examples: Dict[str, Dict[Any, list]] = {}
@@ -186,6 +188,296 @@ class StatComponent:
 				self.stats_examples[stat][key].remove(example)
 			except ValueError:
 				pass
+
+
+class LayoutModel(torch.nn.Module, StatComponent):
+	layout_map = {
+		0: 'Background',
+		1: 'Caption',
+		2: 'Footnote',
+		3: 'Formula',
+		4:'List-item',
+		5: 'Page-footer',
+		6: 'Page-header',
+		7:'Picture',
+		8: 'Section-header',
+		9: 'Table',
+		10: 'Text',
+		11: 'Title'
+	}
+
+	def __init__(self, config: dict):
+		super(LayoutModel, self).__init__()
+
+		# Load config
+		self.model_path = config.get("layout_model_weights", "cmarkea/dit-base-layout-detection")
+		self.device = config["device"]
+		self.cache_dir = config["cache_dir"]
+		self.distinguish_labels = config["use_layout_labels"]
+		self.layout_bs = config["layout_bs"]
+
+		# Load layout model
+		self.processor = AutoImageProcessor.from_pretrained(self.model_path, cache_dir=self.cache_dir)
+		self.model = BeitForSemanticSegmentation.from_pretrained(self.model_path, cache_dir=self.cache_dir)
+		self.model.to(self.device)
+
+		# Stats
+		if self.compute_stats:
+			self.stats["n_layouts_per_page_dist"] = Counter()
+			self.stats["layouts_size_w_dist"] = Counter()
+			self.stats["layouts_size_h_dist"] = Counter()
+			self.stats["layout_labels_dist"] = {LayoutModel.layout_map[label]: 0 for label in LayoutModel.layout_map}
+			self.stats_examples["n_layouts_per_page_dist"] = {}
+			self.stats_examples["layouts_size_w_dist"] = {}
+			self.stats_examples["layouts_size_h_dist"] = {}
+
+	def _filter_detections(
+			self,
+			boxes: List[List[int]],
+			labels: List[int],
+			image_size: Tuple[int, int],
+			min_area: float=0.001,
+			containment_threshold: float=0.5,
+			condition: Literal["or", "and", "small", "overlap"]="or",
+			aspect_power: float=1.0
+	):
+		"""
+		Filters bounding boxes based on normalized size and overlap with condition.
+
+		Args:
+		- boxes: List of bounding boxes [xmin, ymin, xmax, ymax].
+		- labels: List of labels corresponding to boxes.
+		- image_size: Tuple (height, width) of the image.
+		- min_area: Minimum normalized area (relative to image size) for a box to be valid.
+		- containment_threshold: threshold to filter overlapping small boxes.
+		- condition: "or", "and", "small", "overlap" for combining small area and overlap conditions.
+		- aspect_power: Power to apply to the (width/height) aspect ratio.
+
+		Returns:
+		- Filtered boxes and labels.
+		"""
+		assert condition in {"or", "and", "small", "overlap"}, "Condition must be 'or' or 'and'."
+		h, w = image_size
+		filtered_boxes, filtered_labels = [], []
+
+		# Normalize boxes and compute weighted normalized areas
+		normalized_boxes = [
+			[box[0] / w, box[1] / h, box[2] / w, box[3] / h] for box in boxes
+		]
+		def weighted_area(nb):
+			width = nb[2] - nb[0]
+			height = nb[3] - nb[1]
+			if height == 0:
+				return 0
+			return (width * height) * ((width / height) ** aspect_power)
+
+		weighted_areas = [weighted_area(nb) for nb in normalized_boxes]
+		params_to_show = []
+
+		for i, box_a in enumerate(normalized_boxes):
+			is_small = weighted_areas[i] < min_area
+			is_overlapping = False
+			max_cont = 0
+
+			for j, box_b in enumerate(normalized_boxes):
+				if i != j and weighted_areas[j] > weighted_areas[i]:  # Only compare to larger boxes
+					ratio = containment_ratio(box_a, box_b)
+					max_cont = max(max_cont, ratio)
+					if ratio >= containment_threshold:
+						is_overlapping = True
+						break
+
+			# Apply the condition ("and"/"or") for filtering
+			if condition == "or":
+				should_filter = is_small or is_overlapping
+			elif condition == "and":
+				should_filter = is_small and is_overlapping
+			elif condition == "small":
+				should_filter = is_small
+			elif condition == "overlap":
+				should_filter = is_overlapping
+
+			if not should_filter:
+				filtered_boxes.append(box_a)
+				filtered_labels.append(labels[i])
+				params_to_show.append(weighted_areas[i])
+
+		# Denormalize the final boxes back to pixel coordinates
+		denormalized_boxes = [
+			[int(box[0] * w), int(box[1] * h), int(box[2] * w), int(box[3] * h)]
+			for box in filtered_boxes
+		]
+		return denormalized_boxes, filtered_labels
+
+	def _detect_bboxes(self, masks: np.ndarray):
+		"""
+		A simple bounding box detection function
+		"""
+		detected_blocks = []
+		contours, _ = cv2.findContours(
+			masks.astype(np.uint8),
+			cv2.RETR_TREE,
+			cv2.CHAIN_APPROX_SIMPLE
+		)
+		for contour in list(contours):
+			if len(list(contour)) >= 4:
+				# smallest rectangle containing all points
+				x, y, width, height = cv2.boundingRect(contour)
+				bounding_box = [x, y, x + width, y + height]
+				detected_blocks.append(bounding_box)
+		return detected_blocks
+
+	def forward(
+			self,
+			images: List[Image.Image],
+			return_steps: bool=False
+	) -> Tuple[List[dict], List[dict]]:
+		with torch.inference_mode():
+			# Preprocess images
+			inputs = self.processor(images, return_tensors="pt", padding=False)
+			inputs.to(self.device)
+
+			# Forward pass
+			outputs = self.model(**inputs)
+
+			# Postprocess outputs
+			segmentation = self.processor.post_process_semantic_segmentation(
+				outputs,
+				target_sizes=[image.size[::-1] for image in images]
+			)
+			segmentation = [seg.cpu() for seg in segmentation]
+
+		del inputs, outputs
+		gc.collect()
+		torch.cuda.empty_cache()
+
+		# Find bounding boxes
+		bbox_pred = []
+		for img_seg in segmentation:
+			boxes_, labels_ = [], []
+			mm = img_seg > 0
+			if mm.sum() > 0:
+				bbx = self._detect_bboxes(mm.numpy())
+				boxes_.extend(bbx)
+			if self.distinguish_labels:
+				# Majority voting excluding class 0
+				for box in boxes_:
+					xmin, ymin, xmax, ymax = box
+					segment_crop = img_seg[ymin:ymax, xmin:xmax]
+					segment_crop = segment_crop[segment_crop != 0]
+					if len(segment_crop) > 0:
+						label = np.argmax(np.bincount(segment_crop.flatten()))
+					else:
+						label = 0
+					labels_.append(label)
+			else:
+				labels_.extend([10]*len(bbx))
+			bbox_pred.append(dict(boxes=boxes_, labels=labels_))
+
+		# Filter bounding boxes
+		bbox_pred_filtered = []
+		for i, (image, img_preds) in enumerate(zip(images, bbox_pred)):
+			filtered_boxes, filtered_labels = self._filter_detections(
+				img_preds["boxes"], img_preds["labels"], image.size[::-1],
+				min_area=0.02, containment_threshold=0.6, condition = "or", aspect_power=1.0
+			)
+			# normalize boxes to be between 0 and 1
+			filtered_boxes = [
+				[box[0] / image.size[0], box[1] / image.size[1], box[2] / image.size[0], box[3] / image.size[1]]
+				for box in filtered_boxes
+			]
+			bbox_pred_filtered.append(dict(boxes=filtered_boxes, labels=filtered_labels))
+
+		if return_steps:
+			steps = {
+				"segmentation": segmentation,
+				"layout_info_raw": bbox_pred
+			}
+		else:
+			steps = {}
+
+		return bbox_pred_filtered, steps
+
+	def batch_forward(
+			self,
+			images: List[List[Image.Image]], # (bs, n_pages)
+			return_steps: bool=False,
+			**kwargs
+	):
+		"""
+		Process a batch of images
+		"""
+		question_id = kwargs.get("question_id", None)
+		bs = len(images)
+		start_time = time()
+		flatten_images = []  # (bs*n_pages,)
+		for b in range(bs):
+			page_images = images[b]
+			flatten_images.extend(page_images)
+		
+		# Divide into batches of layout_bs
+		new_batches = []  # (bs_l, n_pages_l)
+		for i in range(0, len(flatten_images), self.layout_bs):
+			batch_images = flatten_images[i:i + self.layout_bs]
+			new_batches.append(batch_images)
+		
+		# Process batches and flatten again
+		flatten_layout_info = []  # (bs*n_pages,)
+		flatten_layout_segments = []  # (bs*n_pages, h, w)
+		flatten_layout_info_raw = []  # (bs*n_pages,)
+		for batch_images in new_batches:
+			batch_layout_boxes, steps = self(batch_images, return_steps=True)
+			flatten_layout_info.extend(batch_layout_boxes)
+			flatten_layout_segments.extend(steps["segmentation"])
+			flatten_layout_info_raw.extend(steps["layout_info_raw"])
+		
+		# Reshape flatten_layout_boxes back to (bs, n_pages, n_boxes, 4)
+		layout_info = [] # (bs, n_pages)
+		layout_segments = [] # (bs, n_pages, h, w)
+		layout_info_raw = [] # (bs, n_pages)
+		# layout_info[b][p]: {"boxes": (n_boxes, 4), "labels": (n_boxes,)}
+		index = 0
+		for b in range(bs):
+			page_layouts = []
+			page_segments = []
+			page_info_raw = []
+			for p in range(len(images[b])):
+				page_layouts.append(flatten_layout_info[index])
+				page_segments.append(flatten_layout_segments[index])
+				page_info_raw.append(flatten_layout_info_raw[index])
+				index += 1
+			layout_info.append(page_layouts)
+			layout_segments.append(page_segments)
+			layout_info_raw.append(page_info_raw)
+		
+		if self.compute_stats:
+			self.stats["layout_time"] = time() - start_time
+			for b in range(bs):
+				for p in range(len(layout_info[b])):
+					# n_layouts_per_page_dist
+					n_layouts = len(layout_info[b][p]["boxes"])
+					self.stats["n_layouts_per_page_dist"][n_layouts] += 1
+					self.stat_add_example(self.stats_examples["n_layouts_per_page_dist"], n_layouts, f"{question_id[b]}_p{p}")
+					# layouts_size_w_dist, layouts_size_h_dist
+					for box in layout_info[b][p]["boxes"]:
+						w = box[2] - box[0]
+						h = box[3] - box[1]
+						self.stats["layouts_size_w_dist"][w] += 1
+						self.stats["layouts_size_h_dist"][h] += 1
+						self.stat_add_example(self.stats_examples["layouts_size_w_dist"], w, f"{question_id[b]}_p{p}")
+						self.stat_add_example(self.stats_examples["layouts_size_h_dist"], h, f"{question_id[b]}_p{p}")
+					# layout_labels_dist
+					for label in layout_info[b][p]["labels"]:
+						self.stats["layout_labels_dist"][LayoutModel.layout_map[label]] += 1
+		
+		if return_steps:
+			steps = {
+				"layout_segments": layout_segments, # (bs, n_pages, h, w)
+				"layout_info_raw": layout_info_raw # (bs, n_pages)
+			}
+		else:
+			steps = {}
+		return layout_info, steps
 
 
 class Chunker(StatComponent):
@@ -347,12 +639,15 @@ class Chunker(StatComponent):
 			self.stat_sum("n_chunks_per_doc_dist", batch_n_chunks)
 			self.stat_add_example("n_chunks_per_doc_dist", batch_n_chunks, f"{question_id[b]}")
 		
+		steps = {
+			"words_layout_labels_pages": words_layout_labels_pages # (bs, n_pages, n_words)
+		}
 		return (
 			words_text_chunks, # (bs, n_chunks, n_words)
 			words_boxes_chunks, # (bs, n_chunks, n_words, 4)
 			layout_labels_chunks, # (bs, n_chunks)
 			page_indices, # (bs, n_chunks)
-			words_layout_labels_pages # (bs, n_pages, n_words)
+			steps 
 		)
 	
 	@staticmethod
@@ -457,7 +752,7 @@ class Retriever(StatComponent):
 		self.k = config["n_chunks"]
 		self.include_surroundings = config["include_surroundings"]
 		if self.compute_stats:
-			self.stats["layout_labels_topk_dist"] = {label: 0 for label in layout_map.values()}
+			self.stats["layout_labels_topk_dist"] = {label: 0 for label in LayoutModel.layout_map.values()}
 
 	def _get_similarities(
 			self,
@@ -596,7 +891,7 @@ class Retriever(StatComponent):
 		for b in range(bs):
 			for c in range(len(top_k_layout_labels[b])):
 				label = top_k_layout_labels[b][c]
-				self.stat_sum("layout_labels_topk_dist", layout_map[label])
+				self.stat_sum("layout_labels_topk_dist", LayoutModel.layout_map[label])
 		
 		return (
 			top_k_text, # (bs, k)
@@ -634,4 +929,7 @@ class Retriever(StatComponent):
 		top_k = self._get_top_k(
 			similarities, words_text_chunks, words_box_chunks, layout_labels_chunks, images, page_indices
 		)
-		return *top_k, similarities
+		steps = {
+			"similarities": similarities
+		}
+		return *top_k, steps

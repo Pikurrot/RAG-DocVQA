@@ -2,8 +2,7 @@ import torch
 from torch import no_grad
 from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
-from src.LayoutModel import LayoutModel, layout_map
-from src ._modules import CustomT5Config, Chunker, Embedder, Retriever
+from src ._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel
 from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any, List
@@ -266,16 +265,9 @@ class RAGVT5(torch.nn.Module):
 			self.stat_add_example(stats_examples["n_chunks_per_doc_dist"], batch_n_chunks, f"{question_id[b]}")
 		return text_chunks, boxes_chunks, layout_labels_chunks, page_indices, words_text_chunks, words_boxes_chunks, words_layout_labels_pages, stats, stats_examples
 
-	@no_grad()
-	def retrieve(
+	def online_retrieve(
 			self,
-			batch: dict,
-			k: int = 5,
-			chunk_size: int = 30,
-			chunk_size_tol: float = 0.15,
-			overlap: int = 0,
-			return_words: bool = False,
-			include_surroundings: int = 0
+			batch: dict
 	) -> tuple:
 		"""
 		Retrieve top k chunks and corresponding image patches
@@ -295,7 +287,6 @@ class RAGVT5(torch.nn.Module):
 		words = batch["words"] # (bs, n_pages, n_words)
 		boxes = batch["boxes"] # (bs, n_pages, n_words, 4)
 		images = batch["images"] # (bs, n_pages) PIL images
-		bs = len(questions)
 
 		stats = {}
 		stats_examples = {}
@@ -303,49 +294,13 @@ class RAGVT5(torch.nn.Module):
 		# Get layout boxes and labels
 		start_time = time()
 		if self.layout_model is not None:
-			flatten_images = []  # (bs*n_pages,)
-			for b in range(bs):
-				page_images = images[b]
-				flatten_images.extend(page_images)
-			
-			# Divide into batches of layout_bs
-			new_batches = []  # (bs_l, n_pages_l)
-			for i in range(0, len(flatten_images), self.layout_bs):
-				batch_images = flatten_images[i:i + self.layout_bs]
-				new_batches.append(batch_images)
-			
-			# Process batches and flatten again
-			flatten_layout_info = []  # (bs*n_pages,)
-			flatten_layout_segments = []  # (bs*n_pages, h, w)
-			flatten_layout_info_raw = []  # (bs*n_pages,)
-			for batch_images in new_batches:
-				batch_layout_boxes, steps = self.layout_model(batch_images, return_steps=True)
-				flatten_layout_info.extend(batch_layout_boxes)
-				flatten_layout_segments.extend(steps["segmentation"])
-				flatten_layout_info_raw.extend(steps["layout_info_raw"])
-			
-			# Reshape flatten_layout_boxes back to (bs, n_pages, n_boxes, 4)
-			layout_info = [] # (bs, n_pages)
-			layout_segments = [] # (bs, n_pages, h, w)
-			layout_info_raw = [] # (bs, n_pages)
-			# layout_info[b][p]: {"boxes": (n_boxes, 4), "labels": (n_boxes,)}
-			index = 0
-			for b in range(bs):
-				page_layouts = []
-				page_segments = []
-				page_info_raw = []
-				for p in range(len(images[b])):
-					page_layouts.append(flatten_layout_info[index])
-					page_segments.append(flatten_layout_segments[index])
-					page_info_raw.append(flatten_layout_info_raw[index])
-					index += 1
-				layout_info.append(page_layouts)
-				layout_segments.append(page_segments)
-				layout_info_raw.append(page_info_raw)
+			layout_info, layout_steps = self.layout_model.batch_forward(images, return_steps=True, question_id=batch["question_id"])
 		else:
 			layout_info = [[]]
-			layout_segments = [[]]
-			layout_info_raw = [[]]
+			layout_steps = {
+				"layout_segments": [[]],
+				"layout_info_raw": [[]]
+			}
 		stats["layout_time"] = time() - start_time
 
 		# Get chunks
@@ -354,7 +309,7 @@ class RAGVT5(torch.nn.Module):
 			words_boxes_chunks, # (bs, n_chunks, n_words, 4)
 			layout_labels_chunks, # (bs, n_chunks)
 			page_indices, # (bs, n_chunks)
-			words_layout_labels_pages # (bs, n_pages, n_words)
+			chunker_steps
 		) =\
 			self.chunker.get_chunks(
 				words,
@@ -362,41 +317,10 @@ class RAGVT5(torch.nn.Module):
 				layout_info,
 				question_id=batch["question_id"]
 		)
-		text_chunks, box_chunks = Chunker.compact_chunks(words_text_chunks, words_boxes_chunks)
+		text_chunks, _ = Chunker.compact_chunks(words_text_chunks, words_boxes_chunks)
 
-		# Compute some statistics
-		if layout_info != [[]]:
-			stats["n_layouts_per_page_dist"] = Counter()
-			stats["layouts_size_w_dist"] = Counter()
-			stats["layouts_size_h_dist"] = Counter()
-			stats["layout_labels_dist"] = {layout_map[label]: 0 for label in layout_map}
-			stats_examples["n_layouts_per_page_dist"] = {}
-			stats_examples["layouts_size_w_dist"] = {}
-			stats_examples["layouts_size_h_dist"] = {}
-			for b in range(bs):
-				for p in range(len(layout_info[b])):
-					# n_layouts_per_page_dist
-					n_layouts = len(layout_info[b][p]["boxes"])
-					stats["n_layouts_per_page_dist"][n_layouts] += 1
-					self.stat_add_example(stats_examples["n_layouts_per_page_dist"], n_layouts, f"{batch['question_id'][b]}_p{p}")
-					# layouts_size_w_dist, layouts_size_h_dist
-					for box in layout_info[b][p]["boxes"]:
-						w = box[2] - box[0]
-						h = box[3] - box[1]
-						stats["layouts_size_w_dist"][w] += 1
-						stats["layouts_size_h_dist"][h] += 1
-						self.stat_add_example(stats_examples["layouts_size_w_dist"], w, f"{batch['question_id'][b]}_p{p}")
-						self.stat_add_example(stats_examples["layouts_size_h_dist"], h, f"{batch['question_id'][b]}_p{p}")
-					# layout_labels_dist
-					for label in layout_info[b][p]["labels"]:
-						stats["layout_labels_dist"][layout_map[label]] += 1
-		stats.update(self.chunker.stats)
-		stats_examples.update(self.chunker.stats_examples)
-
-		# Get text embeddings
+		# Get text and question embeddings
 		text_embeddings = self.embedder.embed_multi(text_chunks) # (bs, n_chunks, hidden_size)
-
-		# Get question embeddings
 		question_embeddings = self.embedder.embed(questions) # (bs, hidden_size)
 
 		# Get top k chunks and boxes
@@ -409,7 +333,7 @@ class RAGVT5(torch.nn.Module):
 			top_k_words_layout_labels, # (bs, k, n_words)
 			top_k_patches, # (bs, k, h, w, 3)
 			top_k_page_indices, # (bs, k)
-			similarities, # (bs, n_chunks)
+			retriever_steps,
 		) =\
 			self.retriever.retrieve(
 				text_embeddings,
@@ -422,15 +346,20 @@ class RAGVT5(torch.nn.Module):
 		)
 		stats.update(self.retriever.stats)
 
+		# Prepare output
 		steps = {
-			"text_chunks": text_chunks, # (bs, n_chunks)
-			"similarities": similarities, # (bs, n_chunks)
 			"layout_info": layout_info, # (bs, n_pages)
-			"layout_segments": layout_segments, # (bs, n_pages, h, w)
-			"layout_info_raw": layout_info_raw, # (bs, n_pages)
-			"words_layout_labels_pages": words_layout_labels_pages, # (bs, n_pages, n_words)
+			"text_chunks": text_chunks # (bs, n_chunks)
 		}
+		steps.update(layout_steps)
+		steps.update(chunker_steps)
+		steps.update(retriever_steps)
 
+		if self.layout_model is not None:
+			stats.update(self.layout_model.stats)
+			stats_examples.update(self.layout_model.stats_examples)
+		stats.update(self.chunker.stats)
+		stats_examples.update(self.chunker.stats_examples)
 		stats = {"stats": stats, "stats_examples": stats_examples}
 
 		return (
@@ -450,12 +379,7 @@ class RAGVT5(torch.nn.Module):
 			self,
 			batch: dict,
 			return_pred_answer: bool = True,
-			return_retrieval: bool = False,
-			chunk_num: int = 5,
-			chunk_size: int = 30,
-			chunk_size_tol: float = 0.15,
-			overlap: int = 0,
-			include_surroundings: int = 0
+			return_retrieval: bool = False
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
@@ -470,7 +394,7 @@ class RAGVT5(torch.nn.Module):
 			top_k_words_layout_labels,
 			steps,
 			stats
-		) = self.retrieve(batch, chunk_num, chunk_size, chunk_size_tol, overlap, True, include_surroundings)
+		) = self.online_retrieve(batch)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
 		similarities = steps["similarities"]

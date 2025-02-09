@@ -3,7 +3,7 @@ from torch import no_grad
 from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
 from src.LayoutModel import LayoutModel, layout_map
-from src ._modules import CustomT5Config
+from src ._modules import CustomT5Config, Chunker
 from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any, List
@@ -33,25 +33,20 @@ class RAGVT5(torch.nn.Module):
 		print(f"Using {self.cache_dir} as cache folder")
 		self.use_layout_labels = config.get("use_layout_labels", False)
 		self.n_stats_examples = 5
-
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})
 
-		# Load generator
-		self.generator = VT5ForConditionalGeneration.from_pretrained(
-			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
-		)
-		self.generator.load_config(config)
+		# Load components
+		#	Layout model
+		if self.layout_model_weights is not None:
+			self.layout_model = LayoutModel(config)
+		else:
+			self.layout_model = None
 
-		if self.add_sep_token:
-			# Add the chunk separator token to the tokenizer if not already present
-			token_id = self.generator.tokenizer.encode("<sep>", add_special_tokens=False)
-			if not(len(token_id) == 1 and token_id[0] != self.generator.tokenizer.unk_token_id):
-				print("Adding <sep> token to the tokenizer. This model should now be fine-tuned.")
-				self.generator.tokenizer.add_tokens(["<sep>"])
-				self.generator.language_backbone.resize_token_embeddings(len(self.generator.tokenizer))
+		# 	Chunker
+		self.chunker = Chunker(config)
 
-		# Load embedding model
+		# 	Embedder
 		if self.embed_model == "VT5":
 			self.embedding_dim = 768
 		else:
@@ -67,11 +62,18 @@ class RAGVT5(torch.nn.Module):
 				self.embedding_dim = 1024
 			self.bge_model = SentenceTransformer(self.embed_path, cache_folder=self.cache_dir)
 
-		# Load layout model
-		if self.layout_model_weights is not None:
-			self.layout_model = LayoutModel(config)
-		else:
-			self.layout_model = None
+		# 	Generator
+		self.generator = VT5ForConditionalGeneration.from_pretrained(
+			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
+		)
+		self.generator.load_config(config)
+		if self.add_sep_token:
+			# Add the chunk separator token to the tokenizer if not already present
+			token_id = self.generator.tokenizer.encode("<sep>", add_special_tokens=False)
+			if not(len(token_id) == 1 and token_id[0] != self.generator.tokenizer.unk_token_id):
+				print("Adding <sep> token to the tokenizer. This model should now be fine-tuned.")
+				self.generator.tokenizer.add_tokens(["<sep>"])
+				self.generator.language_backbone.resize_token_embeddings(len(self.generator.tokenizer))
 
 	def to(self, device: Any):
 		self.device = device
@@ -265,7 +267,7 @@ class RAGVT5(torch.nn.Module):
 						words_inside = []
 						boxes_inside = []
 						for i, (word, box) in enumerate(zip(page_words, page_boxes)):
-							contain_ratio = self.layout_model._containment_ratio(box, layout_box)
+							contain_ratio = self.layout_model.containment_ratio(box, layout_box)
 							if contain_ratio > 0.5:
 								words_inside.append(word)
 								boxes_inside.append(box)
@@ -407,8 +409,9 @@ class RAGVT5(torch.nn.Module):
 		stats["layout_time"] = time() - start_time
 
 		# Get chunks
-		text_chunks, box_chunks, layout_labels_chunks, page_indices, words_text_chunks, words_box_chunks, words_layout_labels_pages, chunk_stats, chunk_stats_examples = \
-			self.get_chunks(words, boxes, layout_info, chunk_size, chunk_size_tol, overlap, return_words, question_id=batch["question_id"])
+		layout_labels_chunks, page_indices, words_text_chunks, words_box_chunks, words_layout_labels_pages = \
+			self.chunker.get_chunks(words, boxes, layout_info, question_id=batch["question_id"])
+		text_chunks, box_chunks = self.chunker.compact_chunks(words_text_chunks, words_box_chunks)
 
 		# Compute some statistics
 		if layout_info != [[]]:
@@ -436,8 +439,8 @@ class RAGVT5(torch.nn.Module):
 					# layout_labels_dist
 					for label in layout_info[b][p]["labels"]:
 						stats["layout_labels_dist"][layout_map[label]] += 1
-		stats.update(chunk_stats)
-		stats_examples.update(chunk_stats_examples)
+		stats.update(self.chunker.stats)
+		stats_examples.update(self.chunker.stats_examples)
 
 		# Get text embeddings
 		text_embeddings = [] # (bs, n_chunks, hidden_size)

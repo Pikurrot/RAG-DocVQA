@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from transformers import T5Config
 from transformers import AutoFeatureExtractor, AutoModel
-from torch.nn import CrossEntropyLoss
 from torch.nn import LayerNorm as BertLayerNorm
-
+from typing import Optional, Any, Dict
+from collections import Counter
+from src.utils import containment_ratio
 
 class CustomT5Config(T5Config):
 	def __init__(self, max_2d_position_embeddings=1024,  **kwargs):
@@ -115,8 +115,271 @@ class VisualEmbeddings(nn.Module):
 		return vis_embeddings, vis_attention_mask
 
 
-class Chunker:
-	pass
+class StatComponent:
+	def __init__(self, config: dict):
+		self.compute_stats = config["compute_stats"]
+		self.compute_stats_examples = config["compute_stats_examples"]
+		self.n_stats_examples = config["n_stats_examples"]
+		self.stats: Dict[str, Any] = {}
+		self.stats_examples: Dict[str, Dict[Any, list]] = {}
+
+	def stat_sum(
+			self,
+			stat: str,
+			key: Any,
+			value: int=1
+	):
+		"""
+		Add a value to a dictionary.
+		"""
+		if not self.compute_stats:
+			return
+		if key not in self.stats[stat]:
+			self.stats[stat][key] = 0
+		self.stats[stat][key] += value
+
+	def stat_subtract(
+			self,
+			stat: str,
+			key: Any,
+			value: int=1
+	):
+		"""
+		Subtract a value from a dictionary.
+		"""
+		return self.stat_sum(stat, key, -value)
+
+	def stat_add_example(
+			self,
+			stat: str,
+			key: Any,
+			example: Any
+	):
+		"""
+		Add an example value to a list in a dictionary.
+		"""
+		if not self.compute_stats_examples:
+			return
+		if key not in self.stats_examples[stat]:
+			self.stats_examples[stat][key] = []
+		if len(self.stats_examples[stat][key]) < self.n_stats_examples:
+			self.stats_examples[stat][key].append(example)
+
+	def stat_remove_example(
+			self,
+			stat: str,
+			key: Any,
+			example: Any
+	):
+		"""
+		Remove an example value from a list in a dictionary.
+		"""
+		if not self.compute_stats_examples:
+			return
+		if key in self.stats_examples[stat]:
+			try:
+				self.stats_examples[stat][key].remove(example)
+			except ValueError:
+				pass
+
+
+class Chunker(StatComponent):
+	def __init__(self, config: dict):
+		super(Chunker, self).__init__(config)
+		self.chunk_size = config["chunk_size"]
+		self.chunk_size_tol = config["chunk_size_tol"]
+		self.overlap = config["overlap"]
+		self.include_surroundings = config["include_surroundings"]
+		if self.compute_stats:
+			self.stats = {
+				"chunk_size_dist": Counter(),
+				"n_chunks_per_layout_dist": Counter(),
+				"n_chunks_per_page_dist": Counter(),
+				"n_chunks_per_doc_dist": Counter()
+			}
+		if self.compute_stats_examples:
+			self.stats_examples = {key: {} for key in self.stats}
+
+		assert self.chunk_size > 1, "chunk_size should be a non-negative non-zero integer."
+		assert 0 <= self.chunk_size_tol <= 1, "chunk_size_tol should be a float between 0 and 1."
+		assert self.overlap >= 0, "overlap should be a non-negative integer."
+		assert self.overlap < self.chunk_size, "overlap should be less than chunk_size."
+
+	def get_chunks(
+			self,
+			words: list, # (bs, n_pages, n_words)
+			boxes: list, # (bs, n_pages, n_words, 4)
+			layout_info: Optional[list] = None, # (bs, n_pages)
+			**kwargs
+	) -> tuple:
+		"""
+		Converts words and boxes to chunks
+			:param words: list of words
+			:param boxes: list of boxes
+			:param layout_info: list of layout information
+			:param chunk_size: size of the chunk in words
+			:param overlap: overlap of words between chunks
+		"""
+		bs = len(words)
+		question_id = kwargs.get("question_id", None)
+
+		# Extract layout_boxes and layout_labels from layout_info
+		if layout_info != [[]]:
+			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes, 4)
+			layout_labels = [[layout_info[b][p]["labels"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
+		else:
+			layout_boxes = None
+			layout_labels = None
+
+		layout_labels_chunks = [] # (bs, n_chunks)
+		page_indices = [] # (bs, n_chunks)
+		words_text_chunks = [] # (bs, n_chunks, n_words)
+		words_boxes_chunks = [] # (bs, n_chunks, n_words, 4)
+		words_layout_labels_pages = [] # (bs, n_pages, n_words)
+
+		def make_chunks(_words, _boxes, _p, words_lst, boxes_lst, p_lst) -> int:
+			prev_chunk_size = 0
+			n_chunks = 0
+			for i in range(0, len(_words), self.chunk_size - self.overlap):
+				chunk_words = _words[i:i + self.chunk_size]
+				chunk_boxes = _boxes[i:i + self.chunk_size]
+				this_chunk_size = len(chunk_words)
+				if (
+						i > 0 and 
+						_p == p_lst[-1] and 
+						prev_chunk_size + (this_chunk_size - self.overlap) <= self.chunk_size * (1+self.chunk_size_tol)
+				): # if previous+this chunk in same page/layout is small, merge them
+					this_chunk_size = prev_chunk_size + this_chunk_size - self.overlap
+					words_lst[-1].extend(chunk_words[self.overlap:])
+					boxes_lst[-1].extend(chunk_boxes[self.overlap:])
+					self.stat_subtract("chunk_size_dist", prev_chunk_size)
+					self.stat_sum("chunk_size_dist", this_chunk_size)
+					self.stat_remove_example("chunk_size_dist", prev_chunk_size, f"{question_id[b]}_p{p}")
+					self.stat_add_example("chunk_size_dist", this_chunk_size, f"{question_id[b]}_p{p}")
+				else:
+					p_lst.append(_p)
+					words_lst.append(chunk_words)
+					boxes_lst.append(chunk_boxes)
+					self.stat_sum("chunk_size_dist", len(chunk_words))
+					self.stat_add_example("chunk_size_dist", len(chunk_words), f"{question_id[b]}_p{p}")
+					n_chunks += 1
+				prev_chunk_size = this_chunk_size
+			return n_chunks
+		
+
+		for b, (batch_words, batch_boxes) in enumerate(zip(words, boxes)): # (n_pages, n_words), (n_pages, n_words, 4)
+			if layout_boxes:
+				batch_layout_boxes = layout_boxes[b]
+				batch_layout_labels = layout_labels[b]
+			else:
+				batch_layout_boxes = None
+				batch_layout_labels = None
+			batch_layout_labels_chunks = [] # (n_chunks,)
+			batch_page_indices = [] # (n_chunks,)
+			batch_words_text_chunks = [] # (n_chunks, n_words)
+			batch_words_box_chunks = [] # (n_chunks, n_words, 4)
+			batch_words_layout_labels_pages = [] # (n_pages, n_words)
+			batch_n_chunks = 0
+			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
+				if not isinstance(page_words, list):
+					page_boxes = page_boxes.tolist()
+				if len(page_boxes) > 0 and not isinstance(page_boxes[0], list):
+					page_boxes = [pbox.tolist() for pbox in page_boxes]
+				if not (batch_layout_boxes and batch_layout_boxes[p]):
+					# If no layout, make chunks inside the page
+					page_n_chunks = make_chunks(
+						page_words, page_boxes, p,
+						batch_words_text_chunks, batch_words_box_chunks, batch_page_indices
+					)
+					batch_layout_labels_chunks.extend([10] * page_n_chunks) # 10 = "text"
+					batch_words_layout_labels_pages.append([10] * len(page_words))
+					batch_n_chunks += page_n_chunks
+					self.stat_sum("n_chunks_per_page_dist", page_n_chunks)
+					self.stat_add_example("n_chunks_per_page_dist", page_n_chunks, f"{question_id[b]}_p{p}")
+				else:
+					# Else, if layout, make chunks inside the layout boxes
+					page_layout_boxes = batch_layout_boxes[p]
+					page_layout_labels = batch_layout_labels[p]
+					layout_words_text = [] # (n_chunks, n_words)
+					layout_words_boxes = [] # (n_chunks, n_words, 4)
+					layout_indices = [] # (n_chunks,)
+					page_n_chunks = 0
+					page_words_layout_labels = [10] * len(page_words) # (n_words,)
+					for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
+						# Find words inside the layout box
+						words_inside = []
+						boxes_inside = []
+						for i, (word, box) in enumerate(zip(page_words, page_boxes)):
+							contain_ratio = containment_ratio(box, layout_box)
+							if contain_ratio > 0.5:
+								words_inside.append(word)
+								boxes_inside.append(box)
+								page_words_layout_labels[i] = layout_label
+						# Split the words inside the layout box into chunks
+						layout_n_chunks = make_chunks(
+							words_inside, boxes_inside, lb,
+							layout_words_text, layout_words_boxes, layout_indices
+						)
+						page_n_chunks += layout_n_chunks
+						batch_layout_labels_chunks.extend([layout_label] * layout_n_chunks)
+
+						self.stat_sum("n_chunks_per_layout_dist", layout_n_chunks)
+						self.stat_add_example("n_chunks_per_layout_dist", layout_n_chunks, f"{question_id[b]}_p{p}")
+					batch_page_indices.extend([p] * len(layout_words_text))
+					batch_words_text_chunks.extend(layout_words_text)
+					batch_words_box_chunks.extend(layout_words_boxes)
+					batch_words_layout_labels_pages.append(page_words_layout_labels)
+					batch_n_chunks += page_n_chunks
+					self.stat_sum("n_chunks_per_page_dist", page_n_chunks)
+					self.stat_add_example("n_chunks_per_page_dist", page_n_chunks, f"{question_id[b]}_p{p}")
+
+			layout_labels_chunks.append(batch_layout_labels_chunks)
+			page_indices.append(batch_page_indices)
+			words_text_chunks.append(batch_words_text_chunks)
+			words_boxes_chunks.append(batch_words_box_chunks)
+			words_layout_labels_pages.append(batch_words_layout_labels_pages)
+			self.stat_sum("n_chunks_per_doc_dist", batch_n_chunks)
+			self.stat_add_example("n_chunks_per_doc_dist", batch_n_chunks, f"{question_id[b]}")
+		
+		return (
+			words_text_chunks, # (bs, n_chunks, n_words)
+			words_boxes_chunks, # (bs, n_chunks, n_words, 4)
+			layout_labels_chunks, # (bs, n_chunks)
+			page_indices, # (bs, n_chunks)
+			words_layout_labels_pages # (bs, n_pages, n_words)
+		)
+	
+	def compact_chunks(
+			self,
+			words_text_chunks: list, # (bs, n_pages, n_words)
+			words_boxes_chunks: list # (bs, n_pages, n_words, 4)
+	) -> tuple:
+		"""
+		Converts words and word boxes to compact chunks
+			:param words_text_chunks: list of words
+			:param words_boxes_chunks: list of boxes
+		"""
+		text_chunks = [] # (bs, n_chunks)
+		boxes_chunks = [] # (bs, n_chunks, 4)
+
+		for b, (batch_words, batch_boxes) in enumerate(zip(words_text_chunks, words_boxes_chunks)): # (n_pages, n_words), (n_pages, n_words, 4)
+			batch_text_chunks = [] # (n_chunks,)
+			batch_box_chunks = [] # (n_chunks, 4)
+			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)):
+				# Join words and boxes for each chunk
+				for chunk_words, chunk_boxes in zip(page_words, page_boxes):
+					batch_text_chunks.append(" ".join(chunk_words))
+					# Find box of the chunk
+					min_x = min([box[0] for box in chunk_boxes])
+					min_y = min([box[1] for box in chunk_boxes])
+					max_x = max([box[2] for box in chunk_boxes])
+					max_y = max([box[3] for box in chunk_boxes])
+					batch_box_chunks.append([min_x, min_y, max_x, max_y])
+			text_chunks.append(batch_text_chunks)
+			boxes_chunks.append(batch_box_chunks)
+
+		return text_chunks, boxes_chunks
+
 
 class ChunkEmbedder:
 	pass

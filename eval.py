@@ -412,7 +412,9 @@ if __name__ == "__main__":
 		"return_scores_by_sample": True,
 		"return_answers": True,
 		"save_results": False,
-		"save_continuously": True
+		"save_continuously": True,
+		"compute_stats": True,
+		"compute_stats_examples": True
 	}
 	args.update(extra_args)
 

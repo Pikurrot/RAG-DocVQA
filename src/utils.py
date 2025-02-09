@@ -274,6 +274,21 @@ def get_similarity_score(a: str, b: str):
 				break
 	return np.log(best_score + 1) / np.log(2)
 
+def containment_ratio(
+		small_box: List[int],
+		large_box: List[int]
+) -> float:
+	"""Calculate the containment ratio of small_box in large_box."""
+	x1 = max(small_box[0], large_box[0])
+	y1 = max(small_box[1], large_box[1])
+	x2 = min(small_box[2], large_box[2])
+	y2 = min(small_box[3], large_box[3])
+	inter_width = max(0, x2 - x1)
+	inter_height = max(0, y2 - y1)
+	inter_area = inter_width * inter_height
+	small_area = (small_box[2] - small_box[0]) * (small_box[3] - small_box[1])
+	return inter_area / small_area if small_area > 0 else 0
+
 def is_simple(obj):
 	"""
 	Returns True if the object is simple enough to be dumped in a single line.

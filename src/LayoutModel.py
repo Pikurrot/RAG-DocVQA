@@ -5,6 +5,7 @@ from typing import List, Tuple
 from PIL import Image
 import numpy as np
 import cv2
+from src.utils import containment_ratio
 
 layout_map = {
 	0: 'Background',
@@ -35,22 +36,6 @@ class LayoutModel(torch.nn.Module):
 		self.processor = AutoImageProcessor.from_pretrained(self.model_path, cache_dir=self.cache_dir)
 		self.model = BeitForSemanticSegmentation.from_pretrained(self.model_path, cache_dir=self.cache_dir)
 		self.model.to(self.device)
-
-	def _containment_ratio(
-			self,
-			small_box: List[int],
-			large_box: List[int]
-	) -> float:
-		"""Calculate the containment ratio of small_box in large_box."""
-		x1 = max(small_box[0], large_box[0])
-		y1 = max(small_box[1], large_box[1])
-		x2 = min(small_box[2], large_box[2])
-		y2 = min(small_box[3], large_box[3])
-		inter_width = max(0, x2 - x1)
-		inter_height = max(0, y2 - y1)
-		inter_area = inter_width * inter_height
-		small_area = (small_box[2] - small_box[0]) * (small_box[3] - small_box[1])
-		return inter_area / small_area if small_area > 0 else 0
 
 	def _filter_detections(
 			self,
@@ -102,7 +87,7 @@ class LayoutModel(torch.nn.Module):
 
 			for j, box_b in enumerate(normalized_boxes):
 				if i != j and weighted_areas[j] > weighted_areas[i]:  # Only compare to larger boxes
-					ratio = self._containment_ratio(box_a, box_b)
+					ratio = self.containment_ratio(box_a, box_b)
 					max_cont = max(max_cont, ratio)
 					if ratio >= containment_threshold:
 						is_overlapping = True

@@ -3,7 +3,7 @@ from torch import no_grad
 from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
 from src.LayoutModel import LayoutModel, layout_map
-from src ._modules import CustomT5Config, Chunker, Embedder
+from src ._modules import CustomT5Config, Chunker, Embedder, Retriever
 from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any, List
@@ -17,20 +17,24 @@ class RAGVT5(torch.nn.Module):
 		super(RAGVT5, self).__init__()
 
 		# Load config
-		self.model_weights = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
+		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
+		self.embed_path = config.get("embed_weights", None)
 		self.layout_model_weights = config.get("layout_model_weights", None)
 		self.layout_bs = config.get("layout_batch_size", 1)
+		print(f"Loading model from {self.model_path}")
+		print(f"Loading embedding model from {self.embed_path}")
+		print(f"Loading layout model from {self.layout_model_weights}")
 		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
 		self.embed_model = config.get("embed_model", "VT5")
 		self.add_sep_token = config.get("add_sep_token", False)
 		self.cache_dir = config.get("cache_dir", None)
-		self.use_layout_labels = config.get("use_layout_labels", False)
-		t5_config = CustomT5Config.from_pretrained(self.model_weights, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
-		t5_config.visual_module_config = config.get("visual_module", {})
-		print(f"Loading layout model from {self.layout_model_weights}")
 		print(f"Using {self.cache_dir} as cache folder")
+		self.use_layout_labels = config.get("use_layout_labels", False)
+		self.n_stats_examples = 5
+		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
+		t5_config.visual_module_config = config.get("visual_module", {})
 
 		# Load components
 		#	Layout model
@@ -45,9 +49,12 @@ class RAGVT5(torch.nn.Module):
 		# 	Embedder
 		self.embedder = Embedder(config, language_model=self.generator.language_backbone if self.embed_model == "VT5" else None)
 
+		# 	Retriever
+		self.retriever = Retriever(config)
+
 		# 	Generator
 		self.generator = VT5ForConditionalGeneration.from_pretrained(
-			self.model_weights, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
+			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
 		)
 		self.generator.load_config(config)
 		if self.add_sep_token:
@@ -69,27 +76,6 @@ class RAGVT5(torch.nn.Module):
 
 	def train(self):
 		self.generator.train()
-
-	def get_similarities(
-			self,
-			text_embeddings: List[torch.Tensor], # (bs, n_chunks, hidden_size)
-			question_embeddings: torch.Tensor # (bs, hidden_size)
-	) -> torch.Tensor: # (bs, n_chunks)
-		similarities = []
-		bs = len(text_embeddings)
-
-		for i in range(bs):
-			text_embeds_i = text_embeddings[i] # (n_chunks_i, hidden_size)
-			question_embed_i = question_embeddings[i] # (hidden_size,)
-			
-			norms_text = torch.norm(text_embeds_i, dim=-1) # (n_chunks_i,)
-			norm_question = torch.norm(question_embed_i) # float
-			dot_products = torch.matmul(text_embeds_i, question_embed_i) # (n_chunks_i,)
-			similarity = dot_products / (norms_text * norm_question + 1e-8) # (n_chunks_i,)
-			
-			similarities.append(similarity)
-		
-		return similarities
 
 	def get_chunks(
 			self,
@@ -363,9 +349,20 @@ class RAGVT5(torch.nn.Module):
 		stats["layout_time"] = time() - start_time
 
 		# Get chunks
-		layout_labels_chunks, page_indices, words_text_chunks, words_box_chunks, words_layout_labels_pages = \
-			self.chunker.get_chunks(words, boxes, layout_info, question_id=batch["question_id"])
-		text_chunks, box_chunks = self.chunker.compact_chunks(words_text_chunks, words_box_chunks)
+		(
+			words_text_chunks, # (bs, n_chunks, n_words)
+			words_boxes_chunks, # (bs, n_chunks, n_words, 4)
+			layout_labels_chunks, # (bs, n_chunks)
+			page_indices, # (bs, n_chunks)
+			words_layout_labels_pages # (bs, n_pages, n_words)
+		) =\
+			self.chunker.get_chunks(
+				words,
+				boxes,
+				layout_info,
+				question_id=batch["question_id"]
+		)
+		text_chunks, box_chunks = Chunker.compact_chunks(words_text_chunks, words_boxes_chunks)
 
 		# Compute some statistics
 		if layout_info != [[]]:
@@ -402,123 +399,28 @@ class RAGVT5(torch.nn.Module):
 		# Get question embeddings
 		question_embeddings = self.embedder.embed(questions) # (bs, hidden_size)
 
-		# Compute similarity
-		similarities = self.get_similarities(text_embeddings, question_embeddings)
-
 		# Get top k chunks and boxes
-		top_k_text = []  # (bs, k)
-		top_k_boxes = []  # (bs, k, 4)
-		top_k_layout_labels = []  # (bs, k)
-		top_k_page_indices = []  # (bs, k)
-		top_k_words_text = []  # (bs, k, n_words)
-		top_k_words_boxes = []  # (bs, k, n_words, 4)
-
-		for b in range(bs):
-			k_min = min(k, len(similarities[b]))
-			top_k = torch.topk(similarities[b], k=k_min, dim=-1).indices
-
-			# these do not contain surrounding words, just the retrieved chunks
-			top_k_text.append([text_chunks[b][i] for i in top_k])
-			top_k_boxes.append([box_chunks[b][i] for i in top_k])
-			top_k_layout_labels.append([layout_labels_chunks[b][i] for i in top_k])
-			top_k_page_indices.append([page_indices[b][i] for i in top_k])
-
-			# If return words (for generator), also include surrounding words
-			if return_words:
-				# Build per-page word lists and mappings
-				page_words_text = {}             # page_idx -> list of all words on that page
-				page_words_boxes = {}            # page_idx -> list of all boxes on that page
-				chunk_word_positions = {}        # page_idx -> {chunk_idx: (start_pos, end_pos)}
-				included_word_indices = {}       # page_idx -> set of word indices already included
-
-				total_chunks = len(text_chunks[b])
-
-				# Build word lists and chunk positions per page
-				for i in range(total_chunks):
-					page_idx = page_indices[b][i]
-					if page_idx not in page_words_text:
-						page_words_text[page_idx] = []
-						page_words_boxes[page_idx] = []
-						chunk_word_positions[page_idx][i] = {}
-						included_word_indices[page_idx] = set()
-
-					words_in_chunk = words_text_chunks[b][i]
-					boxes_in_chunk = words_box_chunks[b][i]
-					num_words_in_chunk = len(words_in_chunk)
-
-					# Record the start and end positions of the chunk in the page word list
-					start_pos = len(page_words_text[page_idx])
-					end_pos = start_pos + num_words_in_chunk
-
-					page_words_text[page_idx].extend(words_in_chunk)
-					page_words_boxes[page_idx].extend(boxes_in_chunk)
-					chunk_word_positions[page_idx][i] = (start_pos, end_pos)
-
-				# Collect words with surroundings for each top-k chunk
-				batch_top_k_words_text = []
-				batch_top_k_words_boxes = []
-
-				for i in top_k:
-					i = i.item()
-					page_idx = page_indices[b][i]
-					(start_pos, end_pos) = chunk_word_positions[page_idx][i]
-
-					# Determine the range of word indices to include
-					surround_start = max(0, start_pos - include_surroundings)
-					surround_end = min(len(page_words_text[page_idx]), end_pos + include_surroundings)
-
-					# Collect word indices in the specified range
-					word_indices = range(surround_start, surround_end)
-
-					# Exclude word indices already included
-					new_word_indices = [
-						idx for idx in word_indices if idx not in included_word_indices[page_idx]
-					]
-
-					# Update included word indices
-					included_word_indices[page_idx].update(new_word_indices)
-
-					# Collect words and boxes
-					words_text = [page_words_text[page_idx][idx] for idx in new_word_indices] # (n_words,)
-					words_boxes = [page_words_boxes[page_idx][idx] for idx in new_word_indices]
-
-					# Append to batch results
-					batch_top_k_words_text.append(words_text) # (k, n_words)
-					batch_top_k_words_boxes.append(words_boxes)
-
-				# Append batch data to the final results
-				top_k_words_text.append(batch_top_k_words_text) # (bs, k, n_words)
-				top_k_words_boxes.append(batch_top_k_words_boxes)
-
-		top_k_words_layout_labels = [
-			[
-				[top_k_layout_labels[b][i]] * len(top_k_words_text[b][i])
-				for i in range(len(top_k_words_text[b]))
-			]
-			for b in range(bs)
-		] # (bs, k, n_words)
-
-		# Get image patches
-		top_k_patches = [] # (bs, k, h, w, 3)
-		for b in range(bs):
-			batch_patches = []
-			for i, page_idx in enumerate(top_k_page_indices[b]):
-				page: Image.Image = images[b][page_idx] # (H, W, 3)
-				box: np.ndarray = top_k_boxes[b][i].copy() # (4,)
-				# transform to absolute coordinates
-				box[0] = int(box[0] * page.width)
-				box[1] = int(box[1] * page.height)
-				box[2] = int(box[2] * page.width)
-				box[3] = int(box[3] * page.height)
-				patch = page.crop(box) # (h, w, 3)
-				batch_patches.append(patch)
-			top_k_patches.append(batch_patches)
-
-		# Organize output
-		if self.page_retrieval == "oracle":
-			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
-		elif self.page_retrieval == "anyconforacle":
-			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
+		(
+			top_k_text, # (bs, k)
+			top_k_boxes, # (bs, k, 4)
+			top_k_layout_labels, # (bs, k)
+			top_k_words_text, # (bs, k, n_words)
+			top_k_words_boxes, # (bs, k, n_words, 4)
+			top_k_words_layout_labels, # (bs, k, n_words)
+			top_k_patches, # (bs, k, h, w, 3)
+			top_k_page_indices, # (bs, k)
+			similarities, # (bs, n_chunks)
+		) =\
+			self.retriever.retrieve(
+				text_embeddings,
+				question_embeddings,
+				words_text_chunks,
+				words_boxes_chunks,
+				layout_labels_chunks,
+				images,
+				page_indices
+		)
+		stats.update(self.retriever.stats)
 
 		steps = {
 			"text_chunks": text_chunks, # (bs, n_chunks)
@@ -528,12 +430,6 @@ class RAGVT5(torch.nn.Module):
 			"layout_info_raw": layout_info_raw, # (bs, n_pages)
 			"words_layout_labels_pages": words_layout_labels_pages, # (bs, n_pages, n_words)
 		}
-
-		stats["layout_labels_topk_dist"] = {label: 0 for label in layout_map.values()}
-		for b in range(bs):
-			for c in range(len(top_k_layout_labels[b])):
-				label = top_k_layout_labels[b][c]
-				stats["layout_labels_topk_dist"][layout_map[label]] += 1
 
 		stats = {"stats": stats, "stats_examples": stats_examples}
 

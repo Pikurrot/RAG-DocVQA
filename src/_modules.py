@@ -6,8 +6,11 @@ from sentence_transformers import SentenceTransformer
 from torch.nn import LayerNorm as BertLayerNorm
 from typing import Optional, Any, Dict, List
 from collections import Counter
+from PIL import Image
+import numpy as np
 from src.utils import containment_ratio
 from src._model_utils import mean_pooling
+from src.LayoutModel import layout_map
 from src.VT5 import VT5ForConditionalGeneration
 
 class CustomT5Config(T5Config):
@@ -352,10 +355,10 @@ class Chunker(StatComponent):
 			words_layout_labels_pages # (bs, n_pages, n_words)
 		)
 	
+	@staticmethod
 	def compact_chunks(
-			self,
-			words_text_chunks: list, # (bs, n_pages, n_words)
-			words_boxes_chunks: list # (bs, n_pages, n_words, 4)
+			words_text_chunks: list, # (bs, n_chunks, n_words)
+			words_boxes_chunks: list # (bs, n_chunks, n_words, 4)
 	) -> tuple:
 		"""
 		Converts words and word boxes to compact chunks
@@ -365,19 +368,17 @@ class Chunker(StatComponent):
 		text_chunks = [] # (bs, n_chunks)
 		boxes_chunks = [] # (bs, n_chunks, 4)
 
-		for b, (batch_words, batch_boxes) in enumerate(zip(words_text_chunks, words_boxes_chunks)): # (n_pages, n_words), (n_pages, n_words, 4)
-			batch_text_chunks = [] # (n_chunks,)
-			batch_box_chunks = [] # (n_chunks, 4)
-			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)):
-				# Join words and boxes for each chunk
-				for chunk_words, chunk_boxes in zip(page_words, page_boxes):
-					batch_text_chunks.append(" ".join(chunk_words))
-					# Find box of the chunk
-					min_x = min([box[0] for box in chunk_boxes])
-					min_y = min([box[1] for box in chunk_boxes])
-					max_x = max([box[2] for box in chunk_boxes])
-					max_y = max([box[3] for box in chunk_boxes])
-					batch_box_chunks.append([min_x, min_y, max_x, max_y])
+		for b, (batch_words_text_chunks, batch_words_box_chunks) in enumerate(zip(words_text_chunks, words_boxes_chunks)):
+			batch_text_chunks = []
+			batch_box_chunks = []
+			for chunk_words, chunk_boxes in zip(batch_words_text_chunks, batch_words_box_chunks):
+				batch_text_chunks.append(" ".join(chunk_words))
+				# Find box of the chunk
+				min_x = min([box[0] for box in chunk_boxes])
+				min_y = min([box[1] for box in chunk_boxes])
+				max_x = max([box[2] for box in chunk_boxes])
+				max_y = max([box[3] for box in chunk_boxes])
+				batch_box_chunks.append([min_x, min_y, max_x, max_y])
 			text_chunks.append(batch_text_chunks)
 			boxes_chunks.append(batch_box_chunks)
 
@@ -419,6 +420,11 @@ class Embedder:
 			self.bge_model.to(device)
 
 	def embed(self, text: List[str]) -> torch.Tensor:
+		"""
+		Embed a list of text
+			:param text: list of strings
+			:return: tensor of embeddings
+		"""
 		if not text:
 			return torch.empty(0, self.embedding_dim).to(self.device)
 		if self.embed_model == "VT5":
@@ -436,7 +442,196 @@ class Embedder:
 		return text_embeddings
 
 	def embed_multi(self, text: List[List[str]]) -> List[torch.Tensor]:
+		"""
+		Embed a list of lists of text
+			:param text: list of lists of strings
+			:return: list of tensors of embeddings
+		"""
 		return [self.embed(t) for t in text]
 
-class Retriever:
-	pass
+
+class Retriever(StatComponent):
+	def __init__(self, config: dict):
+		# Load config
+		super(Retriever, self).__init__(config)
+		self.k = config["n_chunks"]
+		self.include_surroundings = config["include_surroundings"]
+		if self.compute_stats:
+			self.stats["layout_labels_topk_dist"] = {label: 0 for label in layout_map.values()}
+
+	def _get_similarities(
+			self,
+			text_embeddings: List[torch.Tensor], # (bs, n_chunks, hidden_size)
+			question_embeddings: torch.Tensor # (bs, hidden_size)
+	) -> torch.Tensor:
+		similarities = []
+		bs = len(text_embeddings)
+
+		for i in range(bs):
+			text_embeds_i = text_embeddings[i] # (n_chunks_i, hidden_size)
+			question_embed_i = question_embeddings[i] # (hidden_size,)
+			
+			norms_text = torch.norm(text_embeds_i, dim=-1) # (n_chunks_i,)
+			norm_question = torch.norm(question_embed_i) # float
+			dot_products = torch.matmul(text_embeds_i, question_embed_i) # (n_chunks_i,)
+			similarity = dot_products / (norms_text * norm_question + 1e-8) # (n_chunks_i,)
+			
+			similarities.append(similarity)
+		
+		return similarities # (bs, n_chunks)
+
+	def _get_top_k(
+			self,
+			similarities: List[torch.Tensor], # (bs, n_chunks)
+			words_text_chunks: list, # (bs, n_chunks, n_words)
+			words_box_chunks: list, # (bs, n_chunks, n_words, 4)
+			layout_labels_chunks: list, # (bs, n_chunks)
+			images: list, # (bs,) PIL images
+			page_indices: list # (bs, n_chunks)
+	):
+		bs = len(similarities)
+		top_k_words_text = []  # (bs, k, n_words)
+		top_k_words_boxes = []  # (bs, k, n_words, 4)
+		top_k_layout_labels = []  # (bs, k)
+		top_k_page_indices = []  # (bs, k)
+
+		for b in range(bs):
+			k_min = min(self.k, len(similarities[b]))
+			top_k = torch.topk(similarities[b], k=k_min, dim=-1).indices
+
+			# these do not contain surrounding words, just the retrieved chunks
+			top_k_layout_labels.append([layout_labels_chunks[b][i] for i in top_k])
+			top_k_page_indices.append([page_indices[b][i] for i in top_k])
+
+			# Include surrounding words
+			# 	Build per-page word lists and mappings
+			page_words_text = {}             # page_idx -> list of all words on that page
+			page_words_boxes = {}            # page_idx -> list of all boxes on that page
+			chunk_word_positions = {}        # page_idx -> {chunk_idx: (start_pos, end_pos)}
+			included_word_indices = {}       # page_idx -> set of word indices already included
+			total_chunks = len(top_k_layout_labels[b])
+
+			# 	Build word lists and chunk positions per page
+			for i in range(total_chunks):
+				page_idx = page_indices[b][i]
+				if page_idx not in page_words_text:
+					page_words_text[page_idx] = []
+					page_words_boxes[page_idx] = []
+					chunk_word_positions[page_idx][i] = {}
+					included_word_indices[page_idx] = set()
+
+				words_in_chunk = words_text_chunks[b][i]
+				boxes_in_chunk = words_box_chunks[b][i]
+				num_words_in_chunk = len(words_in_chunk)
+
+				# Record the start and end positions of the chunk in the page word list
+				start_pos = len(page_words_text[page_idx])
+				end_pos = start_pos + num_words_in_chunk
+
+				page_words_text[page_idx].extend(words_in_chunk)
+				page_words_boxes[page_idx].extend(boxes_in_chunk)
+				chunk_word_positions[page_idx][i] = (start_pos, end_pos)
+
+			# 	Collect words with surroundings for each top-k chunk
+			batch_top_k_words_text = []
+			batch_top_k_words_boxes = []
+
+			for i in top_k:
+				i = i.item()
+				page_idx = page_indices[b][i]
+				(start_pos, end_pos) = chunk_word_positions[page_idx][i]
+
+				# Determine the range of word indices to include
+				surround_start = max(0, start_pos - self.include_surroundings)
+				surround_end = min(len(page_words_text[page_idx]), end_pos + self.include_surroundings)
+
+				# Collect word indices in the specified range
+				word_indices = range(surround_start, surround_end)
+
+				# Exclude word indices already included
+				new_word_indices = [
+					idx for idx in word_indices if idx not in included_word_indices[page_idx]
+				]
+
+				# Update included word indices
+				included_word_indices[page_idx].update(new_word_indices)
+
+				# Collect words and boxes
+				words_text = [page_words_text[page_idx][idx] for idx in new_word_indices] # (n_words,)
+				words_boxes = [page_words_boxes[page_idx][idx] for idx in new_word_indices]
+
+				# Append to batch results
+				batch_top_k_words_text.append(words_text) # (k, n_words)
+				batch_top_k_words_boxes.append(words_boxes)
+
+			# 	Append batch data to the final results
+			top_k_words_text.append(batch_top_k_words_text) # (bs, k, n_words)
+			top_k_words_boxes.append(batch_top_k_words_boxes)
+
+		top_k_text, top_k_boxes = Chunker.compact_chunks(top_k_words_text, top_k_words_boxes)
+		top_k_words_layout_labels = [
+			[
+				[top_k_layout_labels[b][i]] * len(top_k_words_text[b][i])
+				for i in range(len(top_k_words_text[b]))
+			]
+			for b in range(bs)
+		] # (bs, k, n_words)
+
+		# Get image patches
+		top_k_patches = [] # (bs, k, h, w, 3)
+		for b in range(bs):
+			batch_patches = []
+			for i, page_idx in enumerate(top_k_page_indices[b]):
+				page: Image.Image = images[b][page_idx] # (H, W, 3)
+				box: np.ndarray = top_k_boxes[b][i].copy() # (4,)
+				# transform to absolute coordinates
+				box[0] = int(box[0] * page.width)
+				box[1] = int(box[1] * page.height)
+				box[2] = int(box[2] * page.width)
+				box[3] = int(box[3] * page.height)
+				patch = page.crop(box) # (h, w, 3)
+				batch_patches.append(patch)
+			top_k_patches.append(batch_patches)
+
+		for b in range(bs):
+			for c in range(len(top_k_layout_labels[b])):
+				label = top_k_layout_labels[b][c]
+				self.stat_sum("layout_labels_topk_dist", layout_map[label])
+		
+		return (
+			top_k_text, # (bs, k)
+			top_k_boxes, # (bs, k, 4)
+			top_k_layout_labels, # (bs, k)
+			top_k_words_text, # (bs, k, n_words)
+			top_k_words_boxes, # (bs, k, n_words, 4)
+			top_k_words_layout_labels, # (bs, k, n_words)
+			top_k_patches, # (bs, k, h, w, 3)
+			top_k_page_indices # (bs, k)
+		)
+	
+	def retrieve(
+			self,
+			text_embeddings: List[torch.Tensor], # (bs, n_chunks, hidden_size)
+			question_embeddings: torch.Tensor, # (bs, hidden_size)
+			words_text_chunks: list, # (bs, n_chunks, n_words)
+			words_box_chunks: list, # (bs, n_chunks, n_words, 4)
+			layout_labels_chunks: list, # (bs, n_chunks)
+			images: list, # (bs,) PIL images
+			page_indices: list # (bs, n_chunks)
+	) -> tuple:
+		"""
+		Retrieve the top-k chunks
+			:param text_embeddings: list of text embeddings
+			:param question_embeddings: question embeddings
+			:param words_text_chunks: list of words
+			:param words_box_chunks: list of boxes
+			:param layout_labels_chunks: list of layout labels
+			:param images: list of images
+			:param page_indices: list of page indices
+			:return: top-k chunks
+		"""
+		similarities = self._get_similarities(text_embeddings, question_embeddings)
+		top_k = self._get_top_k(
+			similarities, words_text_chunks, words_box_chunks, layout_labels_chunks, images, page_indices
+		)
+		return *top_k, similarities

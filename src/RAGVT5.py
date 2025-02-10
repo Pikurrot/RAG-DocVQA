@@ -17,35 +17,26 @@ class RAGVT5:
 		print(f"Loading model from {self.model_path}")
 		print(f"Loading embedding model from {self.embed_path}")
 		print(f"Loading layout model from {self.layout_model_weights}")
-		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
+		self.page_retrieval = config.get("page_retrieval")
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
 		self.embed_model = config.get("embed_model", "VT5")
 		self.add_sep_token = config.get("add_sep_token", False)
 		self.cache_dir = config.get("cache_dir", None)
 		print(f"Using {self.cache_dir} as cache folder")
-		self.use_layout_labels = config.get("use_layout_labels", False)
 		self.n_stats_examples = 5
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})
 
 		# Load components
-		#	Layout model
-		if self.layout_model_weights is not None:
+		if self.layout_model_weights and self.page_retrieval != "oracle":
 			self.layout_model = LayoutModel(config)
 		else:
 			self.layout_model = None
-
-		# 	Chunker
 		self.chunker = Chunker(config)
-
-		# 	Embedder
 		self.embedder = Embedder(config, language_model=self.generator.language_backbone if self.embed_model == "VT5" else None)
-
-		# 	Retriever
 		self.retriever = Retriever(config)
-
-		# 	Generator
+		
 		self.generator = VT5ForConditionalGeneration.from_pretrained(
 			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
 		)
@@ -62,7 +53,8 @@ class RAGVT5:
 		self.device = device
 		self.generator.to(device)
 		self.embedder.to(device)
-		self.layout_model.to(device)
+		if self.layout_model is not None:
+			self.layout_model.to(device)
 
 	def eval(self):
 		self.generator.eval()
@@ -282,13 +274,14 @@ class RAGVT5:
 		words = batch["words"] # (bs, n_pages, n_words)
 		boxes = batch["boxes"] # (bs, n_pages, n_words, 4)
 		images = batch["images"] # (bs, n_pages) PIL images
+		bs = len(questions)
 
 		stats = {}
 		stats_examples = {}
 
 		# Get layout boxes and labels
 		start_time = time()
-		if self.layout_model is not None:
+		if self.layout_model:
 			layout_info, layout_steps = self.layout_model.batch_forward(images, return_steps=True, question_id=batch["question_id"])
 		else:
 			layout_info = [[]]
@@ -357,6 +350,11 @@ class RAGVT5:
 		stats.update(self.retriever.stats)
 		stats_examples.update(self.chunker.stats_examples)
 		stats = {"stats": stats, "stats_examples": stats_examples}
+
+		if self.page_retrieval == "oracle":
+			top_k_page_indices = [[batch["answer_page_idx"][b]] for b in range(bs)]
+		elif self.page_retrieval == "anyconforacle":
+			top_k_page_indices = [[batch["answer_page_idx"][b]] * len(top_k_text[b]) for b in range(bs)]
 
 		return (
 			top_k_text, # (bs, k)
@@ -547,7 +545,7 @@ class RAGVT5:
 			retrieval = None
 		return *result, retrieval
 
-	@torch.inference_mode
+	@torch.inference_mode()
 	def inference(
 			self,
 			batch: dict,

@@ -523,10 +523,12 @@ class Chunker(StatComponent):
 		if self.compute_stats:
 			self.stats = {
 				"chunk_size_dist": Counter(),
-				"n_chunks_per_layout_dist": Counter(),
 				"n_chunks_per_page_dist": Counter(),
 				"n_chunks_per_doc_dist": Counter()
 			}
+			if not config["layout_model_weights"] or self.page_retrieval == "oracle":
+				self.stats["n_chunks_per_layout_dist"] = Counter()
+
 		if self.compute_stats_examples:
 			self.stats_examples = {key: {} for key in self.stats}
 
@@ -611,6 +613,11 @@ class Chunker(StatComponent):
 			batch_words_layout_labels_pages = [] # (n_pages, n_words)
 			batch_n_chunks = 0
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
+				if not isinstance(page_words, list):
+					page_boxes = page_boxes.tolist()
+				if len(page_boxes) > 0 and not isinstance(page_boxes[0], list):
+					page_boxes = [pbox.tolist() for pbox in page_boxes]
+				
 				if self.page_retrieval == "oracle":
 					# If oracle, take the whole page as a chunk
 					batch_page_indices.append(p)
@@ -618,16 +625,13 @@ class Chunker(StatComponent):
 					batch_words_box_chunks.append(page_boxes)
 					batch_layout_labels_chunks.append(10) # 10 = "text"
 					batch_words_layout_labels_pages.append([10] * len(page_words))
-					self.stats["chunk_size_dist"][len(page_words)] += 1
-					self.stats["n_chunks_per_page_dist"][1] += 1
+					batch_n_chunks += 1
+					self.stat_sum("chunk_size_dist", len(page_words))
+					self.stat_sum("n_chunks_per_page_dist", 1)
 					self.stat_add_example("chunk_size_dist", len(page_words), f"{question_id[b]}_p{p}")
 					self.stat_add_example("n_chunks_per_page_dist", 1, f"{question_id[b]}_p{p}")
 					continue
 
-				if not isinstance(page_words, list):
-					page_boxes = page_boxes.tolist()
-				if len(page_boxes) > 0 and not isinstance(page_boxes[0], list):
-					page_boxes = [pbox.tolist() for pbox in page_boxes]
 				if not (batch_layout_boxes and batch_layout_boxes[p]):
 					# If no layout, make chunks inside the page
 					page_n_chunks = make_chunks(
@@ -711,10 +715,13 @@ class Chunker(StatComponent):
 			for chunk_words, chunk_boxes in zip(batch_words_text_chunks, batch_words_box_chunks):
 				batch_text_chunks.append(" ".join(chunk_words))
 				# Find box of the chunk
-				min_x = min([box[0] for box in chunk_boxes])
-				min_y = min([box[1] for box in chunk_boxes])
-				max_x = max([box[2] for box in chunk_boxes])
-				max_y = max([box[3] for box in chunk_boxes])
+				try:
+					min_x = min([box[0] for box in chunk_boxes])
+					min_y = min([box[1] for box in chunk_boxes])
+					max_x = max([box[2] for box in chunk_boxes])
+					max_y = max([box[3] for box in chunk_boxes])
+				except ValueError:
+					min_x, min_y, max_x, max_y = 0, 0, 1, 1
 				batch_box_chunks.append([min_x, min_y, max_x, max_y])
 			text_chunks.append(batch_text_chunks)
 			boxes_chunks.append(batch_box_chunks)

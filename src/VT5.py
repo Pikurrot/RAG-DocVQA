@@ -38,8 +38,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.save_dir = config.get("save_dir", "save/")
 		self.batch_size = config.get("batch_size", 16)
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
-		self.page_retrieval = config["page_retrieval"].lower() if "page_retrieval" in config else None
+		self.page_retrieval = config.get("page_retrieval", None)
 		self.max_source_length = config.get("max_source_length", 512)
+		self.use_layout_labels = config.get("use_layout_labels", False) and self.page_retrieval != "oracle"
 
 	def to(self, device: Any):
 		self.language_backbone.to(device)
@@ -91,44 +92,56 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			input_boxes = [prompt_box] * len(prompt_token_ids) # (n_tokens, 4)
 			input_layout_labels = prompt_layout.copy()
 
-			for word, box, lab in zip(words[batch_idx], boxes[batch_idx], layout_labels[batch_idx]):
+			for i in range(len(words[batch_idx])):
+				word = words[batch_idx][i]
+				box = boxes[batch_idx][i]
+				if layout_labels:
+					layout_label = layout_labels[batch_idx][i]
 				tokenized_word = self.tokenizer(word).input_ids[:-1] # Tokenize the word and ignore eos_token
 				input_ids.extend(tokenized_word)
 				input_boxes.extend((np.array([box]*len(tokenized_word))*1000).tolist())  # Repeat the box for each token corresponding to the word.
-				input_layout_labels.extend([lab] * len(tokenized_word))
+				if layout_labels:
+					input_layout_labels.extend([layout_label] * len(tokenized_word))
 
 			batch_input_ids.append(input_ids[:self.max_source_length-1] + [self.tokenizer.eos_token_id])  # Append the eos_token at the end.
 			batch_input_boxes.append(np.concatenate([input_boxes[:self.max_source_length-1],  np.array([eos_box])]))  # Append a bounding box corresponding to the eos_token.
-			batch_input_layout_labels.append(input_layout_labels[:self.max_source_length-1] + [eos_layout_value])  # Append the layout label for the eos_token.
+			if layout_labels:
+				batch_input_layout_labels.append(input_layout_labels[:self.max_source_length-1] + [eos_layout_value])  # Append the layout label for the eos_token.
 			longest_seq = min(max(longest_seq, len(input_ids) + 1), self.max_source_length)
 
 		# Convert to tensors and pad. Actually, a pad tensor is created and it"s filled with corresponding values.
 		tensor_input_ids = torch.full([bs, longest_seq], fill_value=self.tokenizer.pad_token_id, dtype=torch.long)
 		tensor_boxes = torch.full([bs, longest_seq, 4],  fill_value=padding_box_value, dtype=torch.long)
-		tensor_layout_labels = torch.full([bs, longest_seq], fill_value=padding_layout_value, dtype=torch.long)
+		if layout_labels:
+			tensor_layout_labels = torch.full([bs, longest_seq], fill_value=padding_layout_value, dtype=torch.long)
 		tensor_attention_mask = torch.zeros([bs, longest_seq], dtype=torch.long)
 
 		for batch_idx in range(bs):
 			seq_len = len(batch_input_ids[batch_idx])
 			tensor_input_ids[batch_idx, :seq_len] = torch.LongTensor(batch_input_ids[batch_idx])
 			tensor_boxes[batch_idx, :seq_len] = torch.from_numpy(batch_input_boxes[batch_idx][:seq_len])
-			tensor_layout_labels[batch_idx, :seq_len] = torch.LongTensor(batch_input_layout_labels[batch_idx])
+			if layout_labels:
+				tensor_layout_labels[batch_idx, :seq_len] = torch.LongTensor(batch_input_layout_labels[batch_idx])
 			tensor_attention_mask[batch_idx, :seq_len] = 1
 
 		# Send everything to GPU
 		tensor_input_ids = tensor_input_ids.to(self.language_backbone.device) # (bs, longest_seq)
 		tensor_boxes = tensor_boxes.to(self.language_backbone.device) # (bs, longest_seq, 4)
-		tensor_layout_labels = tensor_layout_labels.to(self.language_backbone.device) # (bs, longest_seq)
+		if layout_labels:
+			tensor_layout_labels = tensor_layout_labels.to(self.language_backbone.device) # (bs, longest_seq)
 		tensor_attention_mask = tensor_attention_mask.to(self.language_backbone.device) # (bs, longest_seq)
 
 		# Get semantic and spatial embeddings
 		semantic_embedding = self.language_backbone.shared(tensor_input_ids) # (bs, longest_seq, dim)
 		spatial_embedding = self.spatial_embedding(tensor_boxes) # (bs, longest_seq, dim)
-		layout_embedding = self.layout_embedding(tensor_layout_labels) # (bs, longest_seq, dim)
+		if layout_labels:
+			layout_embedding = self.layout_embedding(tensor_layout_labels) # (bs, longest_seq, dim)
 		visual_embedding, visual_emb_mask = self.visual_embedding(images) # (bs, n_visual_tokens, dim), (bs, n_visual_tokens) n_visual_tokens = 14x14+CLS = 197
 
 		# Sum and concatenate embeddings
-		input_embeds = semantic_embedding + spatial_embedding + layout_embedding # (bs, longest_seq, dim)
+		input_embeds = semantic_embedding + spatial_embedding # (bs, longest_seq, dim)
+		if layout_labels:
+			input_embeds = input_embeds + layout_embedding
 		input_embeds = torch.cat([input_embeds, visual_embedding], dim=1) # (bs, longest_seq + n_visual_tokens, dim)
 		tensor_attention_mask = torch.cat([tensor_attention_mask, visual_emb_mask], dim=1) # (bs, longest_seq + n_visual_tokens)
 
@@ -150,7 +163,10 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		question = batch["questions"]
 		words = batch["words"]
 		boxes = batch["boxes"]
-		layout_labels = batch["layout_labels"]
+		if self.use_layout_labels:
+			layout_labels = batch["layout_labels"]
+		else:
+			layout_labels = None
 		images = batch["images"]
 		answers = batch.get("answers", None)
 

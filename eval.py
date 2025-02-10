@@ -38,11 +38,13 @@ def save_local(
 
 	for key, stat in eval_res["retrieval_stats"].items():
 		if isinstance(stat, Counter):
+			if len(list(stat.elements())) == 0:
+				eval_res["retrieval_stats"][key] = {}
+				continue
 			mean = np.mean(list(stat.elements()))
 			std = np.std(list(stat.elements()))
 			min_val = min(stat.elements())
 			max_val = max(stat.elements())
-
 			# save only relevant distribution
 			stat_relevant = dict()
 			# top 5 most common values
@@ -116,7 +118,8 @@ def save_local(
 
 def log_wandb(
 		logger: LoggerEval,
-		save_data: dict
+		save_data: dict,
+		config: dict
 ):
 	def str2sec(time_str: str) -> int:
 		# takes something like "00:00:01" or "00:00:01 (2.90%)" and returns the seconds
@@ -142,36 +145,39 @@ def log_wandb(
 			}
 		},
 		"Avg. retrieval times": {
-			"values": {
-				"Layout time": str2sec(save_data["Avg retrieval time (layout)"]),
-				"Rest": str2sec(save_data["Avg retrieval time"]) - str2sec(save_data["Avg retrieval time (layout)"]),
-			},
-			"config": {
-				"chart_type": "pie"
+				"values": {
+					"Layout time": str2sec(save_data["Avg retrieval time (layout)"]),
+					"Rest": str2sec(save_data["Avg retrieval time"]) - str2sec(save_data["Avg retrieval time (layout)"]),
+				},
+				"config": {
+					"chart_type": "pie"
+				}
 			}
-		},
-		"Layout labels count": {
-			"values": [
-				save_data["Retrieval stats"]["layout_labels_dist"],
-				save_data["Retrieval stats"]["layout_labels_topk_dist"]
-			],
-			"config": {
-				"chart_type": "spider",
-				"log_scale": True,
-				"legend": ["All labels", "Top-k chunks"]
-			}
-		},
-		"Layout labels metrics": {
-			"values": [
-				save_data["Retrieval stats"]["layout_labels_accuracy"],
-				save_data["Retrieval stats"]["layout_labels_anls"]
-			],
-			"config": {
-				"chart_type": "spider",
-				"legend": ["Accuracy", "ANLS"]
-			}
-		}
 	}
+	if config["layout_model_weights"] and config["page_retrieval"] != "oracle":
+		log_data.update({
+			"Layout labels count": {
+				"values": [
+					save_data["Retrieval stats"]["layout_labels_dist"],
+					save_data["Retrieval stats"]["layout_labels_topk_dist"]
+				],
+				"config": {
+					"chart_type": "spider",
+					"log_scale": True,
+					"legend": ["All labels", "Top-k chunks"]
+				}
+			},
+			"Layout labels metrics": {
+				"values": [
+					save_data["Retrieval stats"]["layout_labels_accuracy"],
+					save_data["Retrieval stats"]["layout_labels_anls"]
+				],
+				"config": {
+					"chart_type": "spider",
+					"legend": ["Accuracy", "ANLS"]
+				}
+			}
+		})
 
 	logger.parse_and_log(log_data)
 
@@ -374,7 +380,7 @@ def evaluate(
 			save_data = save_local(config, filename, res)
 
 			# Log data
-			log_wandb(logger, save_data)
+			log_wandb(logger, save_data, config)
 
 	return res
 
@@ -387,8 +393,8 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 4, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"layout_batch_size": 4,
+		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"layout_batch_size": 8,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -397,14 +403,14 @@ if __name__ == "__main__":
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": True, # distinguish layout labels for better retrieval
+		"use_layout_labels": True,
 	}
 	extra_args = {
-		"visible_devices": "0",
+		"visible_devices": "1",
 		"save_folder": "8-layout_model",
 		"save_name_append": "stats_examples",
 		"data_size": 1.0,
-		"log_wandb": False,
+		"log_wandb": True,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,
@@ -452,6 +458,7 @@ if __name__ == "__main__":
 	print(f"Metrics will be saved in {config['save_dir']}/metrics/{config['save_folder']}/{filename}")
 
 	print("Building model...")
+	config["page_retrieval"] = config["page_retrieval"].lower()
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")

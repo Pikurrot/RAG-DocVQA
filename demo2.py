@@ -67,11 +67,7 @@ def process_next_batch(question: str):
 		outputs, pred_answers, pred_answer_pages, pred_answers_conf, retrieval = model.inference(
 			batch,
 			return_retrieval=True,
-			chunk_num=config.get("chunk_num", 10),
-			chunk_size=config.get("chunk_size", 60),
-			chunk_size_tol=config.get("chunk_size_tol", 15),
-			overlap=config.get("overlap", 10),
-			include_surroundings=config.get("include_surroundings", 0)
+			return_steps=True
 		)
 
 		# Prepare original information

@@ -142,7 +142,7 @@ class PageRetrievalModule(nn.Module):
 		try:
 			ret_logits = self.page_retrieval(document_embeddings)  # 10*2*512
 
-		except:
+		except:  # noqa: E722
 			pad_document_embeddings = torch.zeros([len(document_embeddings), self.page_retrieval.in_features], dtype=document_embeddings.dtype, device=document_embeddings.device)
 			pad_document_embeddings[:, :document_embeddings.shape[-1]] = document_embeddings
 			ret_logits = self.page_retrieval(pad_document_embeddings.to())  # 10*2*512
@@ -519,6 +519,7 @@ class Chunker(StatComponent):
 		self.chunk_size_tol = config["chunk_size_tol"]
 		self.overlap = config["overlap"]
 		self.include_surroundings = config["include_surroundings"]
+		self.page_retrieval = config["page_retrieval"]
 		if self.compute_stats:
 			self.stats = {
 				"chunk_size_dist": Counter(),
@@ -610,6 +611,19 @@ class Chunker(StatComponent):
 			batch_words_layout_labels_pages = [] # (n_pages, n_words)
 			batch_n_chunks = 0
 			for p, (page_words, page_boxes) in enumerate(zip(batch_words, batch_boxes)): # (n_words,), (n_words, 4)
+				if self.page_retrieval == "oracle":
+					# If oracle, take the whole page as a chunk
+					batch_page_indices.append(p)
+					batch_words_text_chunks.append(page_words)
+					batch_words_box_chunks.append(page_boxes)
+					batch_layout_labels_chunks.append(10) # 10 = "text"
+					batch_words_layout_labels_pages.append([10] * len(page_words))
+					self.stats["chunk_size_dist"][len(page_words)] += 1
+					self.stats["n_chunks_per_page_dist"][1] += 1
+					self.stat_add_example("chunk_size_dist", len(page_words), f"{question_id[b]}_p{p}")
+					self.stat_add_example("n_chunks_per_page_dist", 1, f"{question_id[b]}_p{p}")
+					continue
+
 				if not isinstance(page_words, list):
 					page_boxes = page_boxes.tolist()
 				if len(page_boxes) > 0 and not isinstance(page_boxes[0], list):
@@ -670,15 +684,12 @@ class Chunker(StatComponent):
 			self.stat_sum("n_chunks_per_doc_dist", batch_n_chunks)
 			self.stat_add_example("n_chunks_per_doc_dist", batch_n_chunks, f"{question_id[b]}")
 		
-		steps = {
-			"words_layout_labels_pages": words_layout_labels_pages # (bs, n_pages, n_words)
-		}
 		return (
 			words_text_chunks, # (bs, n_chunks, n_words)
 			words_boxes_chunks, # (bs, n_chunks, n_words, 4)
 			layout_labels_chunks, # (bs, n_chunks)
 			page_indices, # (bs, n_chunks)
-			steps 
+			words_layout_labels_pages # (bs, n_pages, n_words) 
 		)
 	
 	@staticmethod
@@ -726,7 +737,7 @@ class Embedder:
 
 		if self.embed_model == "VT5":
 			self.embedding_dim = 768
-			print(f"Using VT5 language backbone as embedding model")
+			print("Using VT5 language backbone as embedding model")
 		else:
 			if self.embed_model == "BGE":
 				if self.embed_weights is None:
@@ -966,7 +977,4 @@ class Retriever(StatComponent):
 		top_k = self._get_top_k(
 			similarities, words_text_chunks, words_box_chunks, layout_labels_chunks, images, page_indices
 		)
-		steps = {
-			"similarities": similarities
-		}
-		return *top_k, steps
+		return *top_k, similarities

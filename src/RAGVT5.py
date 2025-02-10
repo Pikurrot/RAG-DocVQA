@@ -1,12 +1,8 @@
 import torch
-from torch import no_grad
-from sentence_transformers import SentenceTransformer
 from src.VT5 import VT5ForConditionalGeneration
 from src ._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel
-from src._model_utils import mean_pooling
 from src.utils import flatten, concatenate_patches
-from typing import Tuple, Any, List
-from PIL import Image
+from typing import Tuple, Any
 import numpy as np
 from time import time
 from collections import Counter
@@ -265,7 +261,8 @@ class RAGVT5:
 
 	def online_retrieve(
 			self,
-			batch: dict
+			batch: dict,
+			return_steps: bool = False
 	) -> tuple:
 		"""
 		Retrieve top k chunks and corresponding image patches
@@ -307,7 +304,7 @@ class RAGVT5:
 			words_boxes_chunks, # (bs, n_chunks, n_words, 4)
 			layout_labels_chunks, # (bs, n_chunks)
 			page_indices, # (bs, n_chunks)
-			chunker_steps
+			words_layout_labels_pages, # (bs, n_pages, n_words)
 		) =\
 			self.chunker.get_chunks(
 				words,
@@ -331,7 +328,7 @@ class RAGVT5:
 			top_k_words_layout_labels, # (bs, k, n_words)
 			top_k_patches, # (bs, k, h, w, 3)
 			top_k_page_indices, # (bs, k)
-			retriever_steps,
+			similarities,
 		) =\
 			self.retriever.retrieve(
 				text_embeddings,
@@ -342,21 +339,22 @@ class RAGVT5:
 				images,
 				page_indices
 		)
-		stats.update(self.retriever.stats)
 
 		# Prepare output
-		steps = {
-			"layout_info": layout_info, # (bs, n_pages)
-			"text_chunks": text_chunks # (bs, n_chunks)
-		}
-		steps.update(layout_steps)
-		steps.update(chunker_steps)
-		steps.update(retriever_steps)
+		if return_steps:
+			steps = {
+				"layout_info": layout_info, # (bs, n_pages)
+				"text_chunks": text_chunks # (bs, n_chunks)
+			}
+			steps.update(layout_steps)
+		else:
+			steps = {}
 
 		if self.layout_model is not None:
 			stats.update(self.layout_model.stats)
 			stats_examples.update(self.layout_model.stats_examples)
 		stats.update(self.chunker.stats)
+		stats.update(self.retriever.stats)
 		stats_examples.update(self.chunker.stats_examples)
 		stats = {"stats": stats, "stats_examples": stats_examples}
 
@@ -369,6 +367,8 @@ class RAGVT5:
 			top_k_words_text, # (bs, k, n_words)
 			top_k_words_boxes, # (bs, k, n_words, 4)
 			top_k_words_layout_labels, # (bs, k, n_words)
+			words_layout_labels_pages, # (bs, n_pages, n_words)
+			similarities, # (bs, n_chunks)
 			steps, # dict
 			stats # dict
 		)
@@ -377,7 +377,8 @@ class RAGVT5:
 			self,
 			batch: dict,
 			return_pred_answer: bool = True,
-			return_retrieval: bool = False
+			return_retrieval: bool = True,
+			return_steps: bool = False
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
@@ -390,12 +391,13 @@ class RAGVT5:
 			top_k_words_text,
 			top_k_words_boxes,
 			top_k_words_layout_labels,
+			words_layout_labels_pages,
+			similarities,
 			steps,
 			stats
-		) = self.online_retrieve(batch)
+		) = self.online_retrieve(batch, return_steps=return_steps)
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
-		similarities = steps["similarities"]
 		# Generate
 		start_time = time()
 		new_batch = {}
@@ -429,7 +431,7 @@ class RAGVT5:
 						page_idx = top_k_page_indices[b][i]
 						words.append(batch["words"][b][page_idx])
 						boxes.append(batch["boxes"][b][page_idx])
-						layout_labels.append(steps["words_layout_labels_pages"][b][page_idx])
+						layout_labels.append(words_layout_labels_pages[b][page_idx])
 						patches.append(batch["images"][b][page_idx])
 
 				if len(words) == 0:
@@ -502,7 +504,7 @@ class RAGVT5:
 			new_batch["questions"] = batch["questions"].copy()  # (bs,)
 			new_batch["words"] = [batch["words"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)
 			new_batch["boxes"] = [batch["boxes"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words, 4)
-			new_batch["layout_labels"] = [steps["words_layout_labels_pages"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)
+			new_batch["layout_labels"] = [words_layout_labels_pages[b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, n_words)
 			new_batch["images"] = [batch["images"][b][page_idx] for b, page_idx in enumerate(major_page_indices)]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			# This treats bs as batch size
@@ -545,7 +547,7 @@ class RAGVT5:
 			retrieval = None
 		return *result, retrieval
 
-	@torch.no_grad
+	@torch.inference_mode
 	def inference(
 			self,
 			batch: dict,

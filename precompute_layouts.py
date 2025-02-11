@@ -32,43 +32,40 @@ class ImageDataset(Dataset):
 			image = self.transform(image)
 		return image, image_path
 
-def precompute_layouts(dataloader, layout_model, config):
-	output_dir = config["output_dir"]
-	if not os.path.exists(output_dir):
-		os.makedirs(output_dir)
+def precompute_layouts_aggregated(dataloader, layout_model, config):
+	results = {}
 	for images, image_paths in tqdm(dataloader):
-		doc_ids = [os.path.basename(p).split("_")[0] for p in image_paths]
-		page_nums = [os.path.basename(p).split("_")[1].split(".")[0] for p in image_paths]
-		out_filenames = [os.path.join(output_dir, doc_id)+".npz" for doc_id in doc_ids]
+		# Use the image filename (without extension) as key
+		keys = [os.path.splitext(os.path.basename(p))[0] for p in image_paths]
 		layout_info, _ = layout_model(images)
-		# Turn lists into arrays
-		for elem in layout_info:
+		for key, elem in zip(keys, layout_info):
+			# Convert lists to numpy arrays
 			elem["boxes"] = np.array(elem["boxes"])
 			elem["labels"] = np.array(elem["labels"])
-		# Save layouts
-		for page_layout, out_filename, page_num in zip(layout_info, out_filenames, page_nums):
-			page_layout_info = {page_num: page_layout}
-			if os.path.exists(out_filename):
-				with np.load(out_filename, allow_pickle=True) as f:
-					existing_layout_info = dict(f)
-				page_layout_info.update(existing_layout_info)
-			np.savez(out_filename, **page_layout_info)
+			results[key] = elem
+	return results
 
-def worker_process(gpu_id, num_gpus, config):
+def worker_process(gpu_id, num_gpus, config, shared_dict):
 	# Set the GPU for this process
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 	
-	# Build dataset and then partition by taking every num_gpus-th element starting from gpu_id
+	# Build dataset and assign every num_gpus-th image to this worker
 	dataset = ImageDataset(config["images_dir"])
 	indices = list(range(len(dataset)))
-	# Partition the dataset: each process gets a slice based on modulo
 	subset_indices = indices[gpu_id::num_gpus]
 	subset = Subset(dataset, subset_indices)
 	
-	dataloader = DataLoader(subset, batch_size=config["batch_size"], shuffle=False, collate_fn=image_lst_collate_fn)
-	layout_model = LayoutModel(config)  # The model should load on the chosen GPU by reading CUDA_VISIBLE_DEVICES
+	dataloader = DataLoader(
+		subset,
+		batch_size=config["batch_size"],
+		shuffle=False,
+		collate_fn=image_lst_collate_fn
+	)
+	layout_model = LayoutModel(config)  # Loads on the chosen GPU
+	results = precompute_layouts_aggregated(dataloader, layout_model, config)
 	
-	precompute_layouts(dataloader, layout_model, config)
+	# Update the shared dictionary with this process's results
+	shared_dict.update(results)
 
 def main():
 	args = {
@@ -78,7 +75,7 @@ def main():
 		"layout_batch_size": 10,
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
-		"output_dir": "/data3fast/users/elopez/data/images_layouts",
+		"output_dir": "/data3fast/users/elopez/data",
 	}
 	extra_args = {
 		"visible_devices": "1,2,3,4,5",
@@ -91,11 +88,22 @@ def main():
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	
-	# Get the list of GPUs to use from the config
+	manager = mp.Manager()
+	shared_dict = manager.dict()
+	
 	visible_devices = [int(x) for x in config["visible_devices"].split(",")]
 	num_gpus = len(visible_devices)
 	
-	mp.spawn(worker_process, args=(num_gpus, config), nprocs=num_gpus, join=True)
+	mp.spawn(worker_process, args=(num_gpus, config, shared_dict), nprocs=num_gpus, join=True)
+	
+	# After all workers finish, convert the shared dict to a regular dict and save
+	aggregated_results = dict(shared_dict)
+	output_dir = config["output_dir"]
+	if not os.path.exists(output_dir):
+		os.makedirs(output_dir)
+	out_filename = os.path.join(output_dir, "images_layouts.npz")
+	np.savez_compressed(out_filename, **aggregated_results)
+	print(f"Merged layout file saved to {out_filename}")
 
 if __name__ == "__main__":
 	main()

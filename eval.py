@@ -420,6 +420,7 @@ if __name__ == "__main__":
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
+		"use_precomputed_layouts": True,
 	}
 	extra_args = {
 		"visible_devices": "1",
@@ -479,7 +480,7 @@ if __name__ == "__main__":
 	model.to(config["device"])
 	print("Building dataset...")
 	data_size = config["data_size"]
-	dataset = build_dataset(config, split="val", size=data_size)
+	dataset = build_dataset(config, split="val", size=data_size, use_precomputed_layouts=config["use_precomputed_layouts"])
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model

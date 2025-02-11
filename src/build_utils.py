@@ -29,7 +29,8 @@ def build_model(config: dict) -> RAGVT5:
 def build_dataset(
 		config: dict,
 		split: Literal["train", "val", "test"],
-		size: float=1.0
+		size: float=1.0,
+		**kwargs
 ):
 	dataset_kwargs = {
 		"get_raw_ocr_data": True,
@@ -41,4 +42,5 @@ def build_dataset(
 			"max_pages": config.get("max_pages", 1),
 			"hierarchical_method": True
 		})
+	dataset_kwargs.update(kwargs)
 	return MPDocVQA(config["imdb_dir"], config["images_dir"], config["page_retrieval"], split, dataset_kwargs)

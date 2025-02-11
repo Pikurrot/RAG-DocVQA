@@ -12,12 +12,24 @@ class RAGVT5:
 		# Load config
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
 		self.embed_path = config.get("embed_weights", None)
-		self.layout_model_weights = config.get("layout_model_weights", None)
 		self.layout_bs = config.get("layout_batch_size", 1)
-		print(f"Loading model from {self.model_path}")
-		print(f"Loading embedding model from {self.embed_path}")
-		print(f"Loading layout model from {self.layout_model_weights}")
+		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
 		self.page_retrieval = config.get("page_retrieval")
+		if self.use_precomputed_layouts or self.page_retrieval == "oracle":
+			self.layout_model_weights = None
+		else:
+			self.layout_model_weights = config.get("layout_model_weights", None)
+		print(f"Loading model from {self.model_path}")
+		if self.embed_path:
+			print(f"Loading embedding model from {self.embed_path}")
+		else:
+			print("Using the same model for embeddings")
+		if self.layout_model_weights:
+			print(f"Loading layout model from {self.layout_model_weights}")
+		elif self.use_precomputed_layouts:
+			print("Using precomputed layouts")
+		else:
+			print("Not using layout information")
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
 		self.embed_model = config.get("embed_model", "VT5")
@@ -283,6 +295,12 @@ class RAGVT5:
 		start_time = time()
 		if self.layout_model:
 			layout_info, layout_steps = self.layout_model.batch_forward(images, return_steps=True, question_id=batch["question_id"])
+		elif self.use_precomputed_layouts:
+			layout_info = batch["layouts"] # (bs, n_pages)
+			layout_steps = {
+				"layout_segments": [[]],
+				"layout_info_raw": [[]]
+			}
 		else:
 			layout_info = [[]]
 			layout_steps = {

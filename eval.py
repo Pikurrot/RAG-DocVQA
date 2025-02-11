@@ -423,7 +423,7 @@ if __name__ == "__main__":
 		"use_precomputed_layouts": True,
 	}
 	extra_args = {
-		"visible_devices": "1",
+		"visible_devices": "5",
 		"save_folder": "8-layout_model",
 		"save_name_append": "stats_examples",
 		"data_size": 1.0,

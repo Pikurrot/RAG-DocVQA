@@ -1,6 +1,6 @@
 import torch
 from src.VT5 import VT5ForConditionalGeneration
-from src ._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel
+from src._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel
 from src.utils import flatten, concatenate_patches
 from typing import Tuple, Any
 import numpy as np

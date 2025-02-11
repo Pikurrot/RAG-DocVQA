@@ -310,6 +310,22 @@ def evaluate(
 				})
 
 		# Accumulate retrieval stats
+		# Debug print retrieval stats sizes after merging each batch:
+		# for key, stat in retrieval_stats.items():
+		# 	if isinstance(stat, Counter):
+		# 		counter_len = sum(stat.values())
+		# 		print(f"Batch {b}: Counter '{key}' total count: {counter_len}")
+		# 	elif isinstance(stat, dict):
+		# 		dict_len = len(stat)
+		# 		print(f"Batch {b}: Dict '{key}' length: {dict_len}")
+				
+		# # And similarly for retrieval_stats_examples:
+		# for key, examples in retrieval_stats_examples.items():
+		# 	if isinstance(examples, dict) and examples:
+		# 		max_key = max(examples, key=lambda k: len(examples[k]))
+		# 		max_len = len(examples[max_key])
+		# 		print(f"Batch {b}: Stat examples key '{key}', max length key: '{max_key}' with {max_len} examples")
+
 		del retrieval["stats"]["layout_time"]
 		if b == 0:
 			retrieval_stats = retrieval["stats"]

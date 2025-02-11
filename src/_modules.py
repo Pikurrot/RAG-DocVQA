@@ -226,10 +226,10 @@ class LayoutModel(torch.nn.Module, StatComponent):
 		1: 'Caption',
 		2: 'Footnote',
 		3: 'Formula',
-		4:'List-item',
+		4: 'List-item',
 		5: 'Page-footer',
 		6: 'Page-header',
-		7:'Picture',
+		7: 'Picture',
 		8: 'Section-header',
 		9: 'Table',
 		10: 'Text',
@@ -244,7 +244,7 @@ class LayoutModel(torch.nn.Module, StatComponent):
 		self.model_path = config.get("layout_model_weights", "cmarkea/dit-base-layout-detection")
 		self.device = config["device"]
 		self.cache_dir = config["cache_dir"]
-		self.distinguish_labels = config["use_layout_labels"]
+		self.use_layout_labels = config["use_layout_labels"]
 		self.layout_bs = config["layout_batch_size"]
 
 		# Load layout model
@@ -390,7 +390,7 @@ class LayoutModel(torch.nn.Module, StatComponent):
 			if mm.sum() > 0:
 				bbx = self._detect_bboxes(mm.numpy())
 				boxes_.extend(bbx)
-			if self.distinguish_labels:
+			if self.use_layout_labels:
 				# Majority voting excluding class 0
 				for box in boxes_:
 					xmin, ymin, xmax, ymax = box
@@ -488,15 +488,17 @@ class LayoutModel(torch.nn.Module, StatComponent):
 					# n_layouts_per_page_dist
 					n_layouts = len(layout_info[b][p]["boxes"])
 					self.stats["n_layouts_per_page_dist"][n_layouts] += 1
-					self.stat_add_example("n_layouts_per_page_dist", n_layouts, f"{question_id[b]}_p{p}")
+					if question_id:
+						self.stat_add_example("n_layouts_per_page_dist", n_layouts, f"{question_id[b]}_p{p}")
 					# layouts_size_w_dist, layouts_size_h_dist
 					for box in layout_info[b][p]["boxes"]:
 						w = box[2] - box[0]
 						h = box[3] - box[1]
 						self.stats["layouts_size_w_dist"][w] += 1
 						self.stats["layouts_size_h_dist"][h] += 1
-						self.stat_add_example("layouts_size_w_dist", w, f"{question_id[b]}_p{p}")
-						self.stat_add_example("layouts_size_h_dist", h, f"{question_id[b]}_p{p}")
+						if question_id:
+							self.stat_add_example("layouts_size_w_dist", w, f"{question_id[b]}_p{p}")
+							self.stat_add_example("layouts_size_h_dist", h, f"{question_id[b]}_p{p}")
 					# layout_labels_dist
 					for label in layout_info[b][p]["labels"]:
 						self.stats["layout_labels_dist"][LayoutModel.layout_map[label]] += 1

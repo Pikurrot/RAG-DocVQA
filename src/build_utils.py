@@ -35,7 +35,8 @@ def build_dataset(
 	dataset_kwargs = {
 		"get_raw_ocr_data": True,
 		"use_images": True,
-		"size": size
+		"size": size,
+		"layouts_dir": config["layouts_dir"]
 	}
 	if config["model_name"] == "Hi-VT5":
 		dataset_kwargs.update({

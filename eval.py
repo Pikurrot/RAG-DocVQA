@@ -154,7 +154,7 @@ def log_wandb(
 				}
 			}
 	}
-	if config["layout_model_weights"] and config["page_retrieval"] != "oracle":
+	if config["layout_model_weights"] and config["page_retrieval"] != "oracle" and config["compute_stats"]:
 		log_data.update({
 			"Layout labels count": {
 				"values": [
@@ -407,7 +407,7 @@ if __name__ == "__main__":
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 8,
@@ -419,13 +419,13 @@ if __name__ == "__main__":
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt"
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": True,
+		"use_layout_labels": False,
 		"use_precomputed_layouts": True,
 	}
 	extra_args = {
 		"visible_devices": "5",
-		"save_folder": "8-layout_model",
-		"save_name_append": "stats_examples",
+		"save_folder": "9-train_layout_model",
+		"save_name_append": "untraiend",
 		"data_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,
@@ -433,7 +433,7 @@ if __name__ == "__main__":
 		"return_answers": True,
 		"save_results": False,
 		"save_continuously": True,
-		"compute_stats": True,
+		"compute_stats": False,
 		"compute_stats_examples": True,
 		"n_stats_examples": 5,
 	}

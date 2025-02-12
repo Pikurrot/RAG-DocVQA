@@ -634,7 +634,7 @@ class Chunker(StatComponent):
 					self.stat_add_example("n_chunks_per_page_dist", 1, f"{question_id[b]}_p{p}")
 					continue
 
-				if not (batch_layout_boxes and batch_layout_boxes[p]):
+				if batch_layout_boxes is None or len(batch_layout_boxes[p]) == 0:
 					# If no layout, make chunks inside the page
 					page_n_chunks = make_chunks(
 						page_words, page_boxes, p,

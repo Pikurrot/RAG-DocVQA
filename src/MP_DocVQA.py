@@ -39,7 +39,7 @@ class MPDocVQA(Dataset):
 		if self.use_precomputed_layouts:
 			layouts_dir = kwargs.get("layouts_dir", None)
 			layouts_file = os.path.join(layouts_dir, "images_layouts.npz")
-			self.layout_info = dict(np.load(layouts_file, allow_pickle=True))
+			self.layout_info = np.load(layouts_file, allow_pickle=True)
 
 	def __len__(self):
 		return len(self.imdb)
@@ -82,7 +82,7 @@ class MPDocVQA(Dataset):
 				image_names = os.path.join(self.images_dir, "{:s}.jpg".format(record['image_name'][answer_page_idx]))
 				images = [Image.open(image_names).convert("RGB")]
 				if self.use_precomputed_layouts:
-					layouts = [self.layout_info[record['image_name'][answer_page_idx]]]
+					layouts = [self.layout_info[record['image_name'][answer_page_idx]].item()]
 
 			if self.get_raw_ocr_data:
 				words = [[word.lower() for word in record['ocr_tokens'][answer_page_idx]]]
@@ -101,7 +101,7 @@ class MPDocVQA(Dataset):
 				image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
 				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
 				if self.use_precomputed_layouts:
-					layouts = [self.layout_info[image_name] for image_name in record["image_name"]]
+					layouts = [self.layout_info[image_name].item() for image_name in record["image_name"]]
 
 			if self.get_raw_ocr_data:
 				words = []
@@ -138,7 +138,7 @@ class MPDocVQA(Dataset):
 				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
 				images += [Image.new('RGB', (2, 2)) for i in range(self.max_pages - len(image_names))]  # Pad with 2x2 images.
 				if self.use_precomputed_layouts:
-					layouts = [self.layout_info[image_name] for image_name in record["image_name"]]
+					layouts = [self.layout_info[image_name].item() for image_name in record["image_name"]]
 					layouts += [None for i in range(self.max_pages - len(layouts))]  # Pad with None layouts.
 				
 			start_idxs, end_idxs = None, None

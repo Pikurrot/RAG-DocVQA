@@ -119,6 +119,7 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
 		"batch_size": 4,
+		"batch_size_eval": 50,
 		"chunk_num": 5,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -168,7 +169,7 @@ if __name__ == "__main__":
 	train_dataset = build_dataset(config, split="train", size=config["train_size"], use_precomputed_layouts=config["use_precomputed_layouts"])
 	val_dataset   = build_dataset(config, split="val", size=config["val_size"], use_precomputed_layouts=config["use_precomputed_layouts"])
 	train_data_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True, collate_fn=mpdocvqa_collate_fn)
-	val_data_loader   = DataLoader(val_dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn)
+	val_data_loader   = DataLoader(val_dataset, batch_size=config["batch_size_eval"], shuffle=False, collate_fn=mpdocvqa_collate_fn)
 
 	print("Training...")
 	evaluator = Evaluator(case_sensitive=False)

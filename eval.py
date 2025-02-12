@@ -209,6 +209,7 @@ def evaluate(
 		total_anls = 0
 		total_ret_prec = 0
 		total_chunk_scores = 0
+	n_samples = 0
 	load_time = 0
 	layout_time = 0
 	retrieval_time = 0
@@ -223,6 +224,7 @@ def evaluate(
 	# Evaluate each batch
 	for b, batch in enumerate(tqdm(data_loader)):
 		bs = len(batch["question_id"])
+		n_samples += bs
 
 		# Inference using the model
 		if model_name == "Hi-VT5":
@@ -361,15 +363,15 @@ def evaluate(
 				avg_chunk_score = np.mean(total_chunk_scores)
 			else:
 				# Compute average metrics
-				accuracy = np.mean(total_accuracies/len(data_loader.dataset))
-				anls = np.mean(total_anls/len(data_loader.dataset))
-				retrieval_precision = np.mean(total_ret_prec/len(data_loader.dataset))
-				avg_chunk_score = np.mean(total_chunk_scores/len(data_loader.dataset))
+				accuracy = total_accuracies/n_samples
+				anls = total_anls/n_samples
+				retrieval_precision = total_ret_prec/n_samples
+				avg_chunk_score = total_chunk_scores/n_samples
 				scores_by_samples = []
-			avg_load_time = load_time/len(data_loader)
-			avg_layout_time = layout_time/len(data_loader)
-			avg_retrieval_time = retrieval_time/len(data_loader)
-			avg_generation_time = generation_time/len(data_loader)
+			avg_load_time = load_time/n_samples
+			avg_layout_time = layout_time/n_samples
+			avg_retrieval_time = retrieval_time/n_samples
+			avg_generation_time = generation_time/n_samples
 
 			res = {
 				"accuracy": accuracy,

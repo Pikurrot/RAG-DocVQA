@@ -94,7 +94,7 @@ def save_local(
 		"Avg ANLS": eval_res["anls"],
 		"Avg retrieval precision": eval_res["retrieval_precision"],
 		"Avg chunk score": eval_res["chunk_score"],
-		"Dataset size": f"{data_size*100}%",
+		"Dataset size": f"{config['val_size']*100}%",
 		"Inference time": inf_time,
 		"Avg load time": avg_load_time,
 		"Avg retrieval time (layout)": avg_layout_time,
@@ -130,11 +130,11 @@ def log_wandb(
 		return int(h)*3600 + int(m)*60 + int(s)
 
 	log_data = {
-		"Accuracy": save_data["Avg accuracy"],
-		"Anls": save_data["Avg ANLS"],
-		"Retrieval precision": save_data["Avg retrieval precision"],
-		"Chunk score": save_data["Avg chunk score"],
-		"Avg. inference times": {
+		"Val/Accuracy": save_data["Avg accuracy"],
+		"Val/Anls": save_data["Avg ANLS"],
+		"Val/Retrieval precision": save_data["Avg retrieval precision"],
+		"Val/Chunk score": save_data["Avg chunk score"],
+		"Val/Avg. inference times": {
 			"values": {
 				"Load time": str2sec(save_data["Avg load time"]),
 				"Retrieval time": str2sec(save_data["Avg retrieval time"]),
@@ -144,7 +144,7 @@ def log_wandb(
 				"chart_type": "pie"
 			}
 		},
-		"Avg. retrieval times": {
+		"Val/Avg. retrieval times": {
 				"values": {
 					"Layout time": str2sec(save_data["Avg retrieval time (layout)"]),
 					"Rest": str2sec(save_data["Avg retrieval time"]) - str2sec(save_data["Avg retrieval time (layout)"]),
@@ -156,7 +156,7 @@ def log_wandb(
 	}
 	if config["layout_model_weights"] and config["page_retrieval"] != "oracle" and config["compute_stats"]:
 		log_data.update({
-			"Layout labels count": {
+			"Val/Layout labels count": {
 				"values": [
 					save_data["Retrieval stats"]["layout_labels_dist"],
 					save_data["Retrieval stats"]["layout_labels_topk_dist"]
@@ -167,7 +167,7 @@ def log_wandb(
 					"legend": ["All labels", "Top-k chunks"]
 				}
 			},
-			"Layout labels metrics": {
+			"Val/Layout labels metrics": {
 				"values": [
 					save_data["Retrieval stats"]["layout_labels_accuracy"],
 					save_data["Retrieval stats"]["layout_labels_anls"]
@@ -424,9 +424,9 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "5",
-		"save_folder": "9-train_layout_model",
+		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "untraiend",
-		"data_size": 1.0,
+		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
@@ -479,8 +479,7 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	data_size = config["data_size"]
-	dataset = build_dataset(config, split="val", size=data_size, use_precomputed_layouts=config["use_precomputed_layouts"])
+	dataset = build_dataset(config, split="val", size=config["val_size"], use_precomputed_layouts=config["use_precomputed_layouts"])
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model

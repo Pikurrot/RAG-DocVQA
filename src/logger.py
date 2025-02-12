@@ -7,12 +7,10 @@ from src.RAGVT5 import RAGVT5
 
 class Logger:
 
-	def __init__(self, config: dict):
-
+	def __init__(self, config: dict, experiment_name: str):
+		self.log_wandb = config["log_wandb"]
 		self.log_folder = config["save_dir"]
-
-		experiment_date = datetime.datetime.now().strftime("%Y.%m.%d_%H.%M.%S")
-		self.experiment_name = "{:s}__{:}".format(config["model_name"], experiment_date)
+		self.experiment_name = experiment_name
 
 		machine_dict = {"cvc117": "Local", "cudahpc16": "DAG", "cudahpc25": "DAG-A40"}
 		machine = machine_dict.get(socket.gethostname(), socket.gethostname())
@@ -47,6 +45,10 @@ class Logger:
 			if k != "Model" and k != "Weights":
 				print("\t{:}: {:}".format(k, v))
 		print("}\n")
+
+	def log(self, *args, **kwargs):
+		if self.log_wandb:
+			self.logger.log(*args, **kwargs)
 
 	def log_model_parameters(self, model: RAGVT5):
 		total_params = sum(p.numel() for p in model.generator.parameters())

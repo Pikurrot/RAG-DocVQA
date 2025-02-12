@@ -26,7 +26,7 @@ runtime:
   visible_devices: [1, 2, 3, 4, 5]
   save_folder: 8-layout_model
   save_name_append: stats_examples
-  data_size: 1.0
+  val_size: 1.0
   log_media_interval: 10
   return_scores_by_sample: True
   return_answers: True

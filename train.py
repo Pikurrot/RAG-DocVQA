@@ -96,7 +96,7 @@ def train(
 		logger_train.current_epoch = epoch_ix
 		train_epoch(
 			train_data_loader,
-			model, optimizer, lr_scheduler, evaluator, logger_eval,
+			model, optimizer, lr_scheduler, evaluator, logger_train,
 			config
 		)
 		eval_res = evaluate(
@@ -137,7 +137,7 @@ if __name__ == "__main__":
 		"visible_devices": "1",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
-		"eval_start": True,
+		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,
 		"log_wandb": True,

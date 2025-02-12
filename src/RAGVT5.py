@@ -38,7 +38,7 @@ class RAGVT5:
 		print(f"Using {self.cache_dir} as cache folder")
 		self.train_layout = config.get("train_layout", False)
 		self.train_embedder = config.get("train_embed", False)
-		self.train_generator = config.get("train_generator", False)
+		self.train_generator = config["train_language_backbone"] or config["train_spatial_embedding"] or config["train_visual_embedding"] or config["train_layout_embedding"]
 		self.train_mode = False
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})

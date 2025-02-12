@@ -41,6 +41,19 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.page_retrieval = config.get("page_retrieval", None)
 		self.max_source_length = config.get("max_source_length", 512)
 		self.use_layout_labels = config.get("use_layout_labels", False) and self.page_retrieval != "oracle"
+		if not config["train_language_backbone"]:
+			# set requires_grad to False for all parameters
+			for param in self.language_backbone.parameters():
+				param.requires_grad = False
+		if not config["train_spatial_embedding"]:
+			for param in self.spatial_embedding.parameters():
+				param.requires_grad = False
+		if not config["train_visual_embedding"]:
+			for param in self.visual_embedding.parameters():
+				param.requires_grad = False
+		if not config["train_layout_embedding"]:
+			for param in self.layout_embedding.parameters():
+				param.requires_grad = False
 
 	def to(self, device: Any):
 		self.language_backbone.to(device)

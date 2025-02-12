@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import datetime
 import time
+import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from src.RAGVT5 import RAGVT5
@@ -14,6 +15,13 @@ from src.MP_DocVQA import mpdocvqa_collate_fn
 from eval import evaluate
 from src.checkpoint import save_model
 from typing import Any
+
+def get_grad_norm(module: torch.nn.Module) -> float:
+	total_norm = 0.0
+	for p in module.parameters():
+		if p.grad is not None:
+			total_norm += p.grad.data.norm(2).item() ** 2
+	return total_norm ** 0.5
 
 def train_epoch(
 		data_loader: DataLoader,
@@ -36,6 +44,13 @@ def train_epoch(
 		loss = outputs.loss + outputs.ret_loss if hasattr(outputs, "ret_loss") else outputs.loss
 
 		loss.backward()
+		grad_norms = {}
+		for name, module in model.generator.named_modules():
+			# Only consider modules with parameters that have gradients
+			if any(p.grad is not None for p in module.parameters()):
+				norm = get_grad_norm(module)
+				grad_norms[name] = norm
+
 		optimizer.step()
 		lr_scheduler.step()
 
@@ -50,7 +65,8 @@ def train_epoch(
 			"Train/Batch loss": outputs.loss.item(),
 			"Train/Batch Accuracy": batch_acc,
 			"Train/Batch ANLS": batch_anls,
-			"lr": optimizer.param_groups[0]["lr"]
+			"Train/lr": optimizer.param_groups[0]["lr"],
+			"Train/Batch Grad Norm": grad_norms,
 		}
 
 		if hasattr(outputs, "ret_loss"):
@@ -99,6 +115,9 @@ def train(
 			model, optimizer, lr_scheduler, evaluator, logger_train,
 			config
 		)
+		save_model(model, epoch_ix, config, update_best=is_updated)
+		print("Model saved")
+		torch.cuda.empty_cache()
 		eval_res = evaluate(
 			val_data_loader,
 			model, evaluator, logger_eval,
@@ -107,8 +126,6 @@ def train(
 		print(f"Epoch {epoch_ix} completed")
 		is_updated = evaluator.update_global_metrics(eval_res["accuracy"], eval_res["anls"], epoch_ix)
 		logger_train.log_val_metrics(eval_res["accuracy"], eval_res["anls"], eval_res["retrieval_precision"], eval_res["chunk_score"], update_best=is_updated)
-		save_model(model, epoch_ix, config, update_best=is_updated)
-		print("Model saved")
 
 if __name__ == "__main__":
     # Prepare model and dataset
@@ -120,7 +137,7 @@ if __name__ == "__main__":
 		"add_sep_token": False,
 		"batch_size": 4,
 		"batch_size_eval": 50,
-		"chunk_num": 5,
+		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
@@ -131,10 +148,13 @@ if __name__ == "__main__":
 		"use_precomputed_layouts": True,
 		"train_layout": False, # Not implemented
 		"train_embedder": False, # Not implemented
-		"train_generator": True
+		"train_language_backbone": False,
+		"train_spatial_embedding": False,
+		"train_visual_embedding": False,
+		"train_layout_embedding": True,
 	}
 	extra_args = {
-		"visible_devices": "1",
+		"visible_devices": "2",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"eval_start": False,

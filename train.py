@@ -34,6 +34,13 @@ def train_epoch(
 ):
 	model.train()
 
+	modules = {
+		"language_backbone": model.generator.language_backbone,
+		"spatial_embedding": model.generator.spatial_embedding,
+		"visual_embedding": model.generator.visual_embedding,
+		"layout_embedding": model.generator.layout_embedding
+	}
+
 	for batch_idx, batch in enumerate(tqdm(data_loader)):
 		gt_answers = batch["answers"]
 		outputs, pred_answers, pred_answer_pages, _, _ = model.forward(
@@ -45,7 +52,7 @@ def train_epoch(
 
 		loss.backward()
 		grad_norms = {}
-		for name, module in model.generator.named_modules():
+		for name, module in modules.items():
 			# Only consider modules with parameters that have gradients
 			if any(p.grad is not None for p in module.parameters()):
 				norm = get_grad_norm(module)
@@ -95,6 +102,7 @@ def train(
 	logger_train.log_model_parameters(model)
 	logger_train.len_dataset = len(train_data_loader)
 	optimizer, lr_scheduler = build_optimizer(model, length_train_loader=len(train_data_loader), config=config)
+	is_updated = True
 
 	if config.get("eval_start", False):
 		logger_train.current_epoch = -1
@@ -136,7 +144,7 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
 		"batch_size": 4,
-		"batch_size_eval": 50,
+		"batch_size_eval": 40,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -144,11 +152,11 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": False,
+		"use_layout_labels": True,
 		"use_precomputed_layouts": True,
 		"train_layout": False, # Not implemented
 		"train_embedder": False, # Not implemented
-		"train_language_backbone": False,
+		"train_language_backbone": True,
 		"train_spatial_embedding": False,
 		"train_visual_embedding": False,
 		"train_layout_embedding": True,

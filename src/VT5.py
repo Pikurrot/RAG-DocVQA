@@ -54,6 +54,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		if not config["train_layout_embedding"]:
 			for param in self.layout_embedding.parameters():
 				param.requires_grad = False
+		self.layout_embedding_scale = config.get("layout_embedding_scale", 1.0)
 
 	def to(self, device: Any):
 		self.language_backbone.to(device)
@@ -144,7 +145,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			tensor_layout_labels = tensor_layout_labels.to(self.language_backbone.device) # (bs, longest_seq)
 		tensor_attention_mask = tensor_attention_mask.to(self.language_backbone.device) # (bs, longest_seq)
 
-		# Get semantic and spatial embeddings
+		# Get semantic, spatial and layout embeddings
 		semantic_embedding = self.language_backbone.shared(tensor_input_ids) # (bs, longest_seq, dim)
 		spatial_embedding = self.spatial_embedding(tensor_boxes) # (bs, longest_seq, dim)
 		if layout_labels:
@@ -154,7 +155,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		# Sum and concatenate embeddings
 		input_embeds = semantic_embedding + spatial_embedding # (bs, longest_seq, dim)
 		if layout_labels:
-			input_embeds = input_embeds + layout_embedding
+			input_embeds = input_embeds + layout_embedding * self.layout_embedding_scale
 		input_embeds = torch.cat([input_embeds, visual_embedding], dim=1) # (bs, longest_seq + n_visual_tokens, dim)
 		tensor_attention_mask = torch.cat([tensor_attention_mask, visual_emb_mask], dim=1) # (bs, longest_seq + n_visual_tokens)
 

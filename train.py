@@ -160,11 +160,12 @@ if __name__ == "__main__":
 		"train_spatial_embedding": False,
 		"train_visual_embedding": False,
 		"train_layout_embedding": True,
+		"layout_embedding_scale": 10.0,
 	}
 	extra_args = {
-		"visible_devices": "2",
+		"visible_devices": "5",
 		"save_folder": "9-train_generator_with_layout",
-		"save_name_append": "train_generator",
+		"save_name_append": "train_generator_x10",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,

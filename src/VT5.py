@@ -14,12 +14,36 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 
 	def __init__(self, config: CustomT5Config):
 		super().__init__(config)
+		# Load config
+		config_dict = config.to_dict()
+		self.save_dir = config_dict.get("save_dir", "save/")
+		self.batch_size = config_dict.get("batch_size", 16)
+		self.model_path = config_dict.get("model_weights", "rubentito/vt5-base-spdocvqa")
+		self.page_retrieval = config_dict.get("page_retrieval", None)
+		self.max_source_length = config_dict.get("max_source_length", 512)
+		self.use_layout_labels = config_dict.get("use_layout_labels", False) and self.page_retrieval != "oracle"
+
+		# Load components
 		self.tokenizer = T5Tokenizer.from_pretrained(config._name_or_path, ignore_mismatched_sizes=True)
 		self.language_backbone = LayoutT5ForConditionalGeneration(config)
 		self.spatial_embedding = SpatialEmbeddings(config)
 		self.visual_embedding = VisualEmbeddings(config)
 		self.layout_embedding = torch.nn.Embedding(12, self.language_backbone.model_dim)
-		self.layout_embedding_scale = torch.nn.Parameter(torch.tensor(1.0))
+		self.layout_embedding_scale = torch.nn.Parameter(torch.tensor(float(config_dict.get("layout_embedding_scale", 1.0))))
+
+		# Freeze embeddings for training
+		if not config_dict.get("train_language_backbone", False):
+			for param in self.language_backbone.parameters():
+				param.requires_grad = False
+		if not config_dict.get("train_spatial_embedding", False):
+			for param in self.spatial_embedding.parameters():
+				param.requires_grad = False
+		if not config_dict.get("train_visual_embedding", False):
+			for param in self.visual_embedding.parameters():
+				param.requires_grad = False
+		if not config_dict.get("train_layout_embedding", False):
+			for param in self.layout_embedding.parameters():
+				param.requires_grad = False
 
 	def post_init(self):
 		"""Initialize weights after model is loaded"""
@@ -41,29 +65,6 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		# Initialize weights and apply final processing
 		model.post_init()
 		return model
-
-	def load_config(self, config: dict):
-		# Load extra config
-		self.save_dir = config.get("save_dir", "save/")
-		self.batch_size = config.get("batch_size", 16)
-		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
-		self.page_retrieval = config.get("page_retrieval", None)
-		self.max_source_length = config.get("max_source_length", 512)
-		self.use_layout_labels = config.get("use_layout_labels", False) and self.page_retrieval != "oracle"
-		if not config["train_language_backbone"]:
-			# set requires_grad to False for all parameters
-			for param in self.language_backbone.parameters():
-				param.requires_grad = False
-		if not config["train_spatial_embedding"]:
-			for param in self.spatial_embedding.parameters():
-				param.requires_grad = False
-		if not config["train_visual_embedding"]:
-			for param in self.visual_embedding.parameters():
-				param.requires_grad = False
-		if not config["train_layout_embedding"]:
-			for param in self.layout_embedding.parameters():
-				param.requires_grad = False
-		self.layout_embedding_scale.data.fill_(float(config.get("layout_embedding_scale", 1.0)))
 
 	def to(self, device: Any):
 		self.language_backbone.to(device)
@@ -184,6 +185,8 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			to_return = (input_embeds, *to_return)
 		if layout_labels:
 			to_return = (*to_return, tensor_layout_labels)
+		else:
+			to_return = (*to_return, None)
 		return to_return
 
 	def forward(self, batch: dict, return_pred_answer: bool=False):

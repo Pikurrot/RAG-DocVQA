@@ -23,8 +23,8 @@ class LayoutT5ForConditionalGeneration(T5ForConditionalGeneration):
 		self.layout_classifier = nn.Linear(config.d_model, 12)
 		self.layout_norm = nn.LayerNorm(config.d_model)
 		self.layout_loss_weight = getattr(config, "layout_loss_weight", 1.0)
-		print("layout classifier weight:", self.layout_classifier.weight.shape, self.layout_classifier.weight)
-		print("layout classifier bias:", self.layout_classifier.bias.shape, self.layout_classifier.bias)
+		# print("layout classifier weight:", self.layout_classifier.weight.shape, self.layout_classifier.weight)
+		# print("layout classifier bias:", self.layout_classifier.bias.shape, self.layout_classifier.bias)
 
 	@add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
 	@replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)

@@ -2,13 +2,13 @@ model:
   model: RAGVT5
   embed_model: BGE # BGE, VT5, BGE-M3, BGE-reranker
   add_sep_token: False
-  # model_weights: /data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_sep-token/model__9.ckpt
+  model_weights: /data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt
 
 data:
   dataset: MP-DocVQA
-  page_retrieval: [Oracle, MaxConfPage, AnyConfPage, MajorPage, WeightMajorPage]
-  batch_size: [30, 15, 15, 15, 15]
-  layout_batch_size: 2
+  page_retrieval: [Oracle, Concat, AnyConf]
+  batch_size: [50, 50, 32]
+  layout_batch_size: 8
 
 retrieval:
   chunk_num: 10
@@ -21,14 +21,21 @@ retrieval:
 layout_model:
   layout_model_weights: cmarkea/dit-base-layout-detection
   use_layout_labels: True
+  use_precomputed_layouts: True
+  layout_embedding_scale: 1.0
+  layout_loss_weight: 1.0
 
 runtime:
-  visible_devices: [1, 2, 3, 4, 5]
-  save_folder: 8-layout_model
-  save_name_append: stats_examples
+  visible_devices: [3, 4, 5]
+  save_folder: 9-train_generator_with_layout
+  save_name_append: train_generator
   val_size: 1.0
+  log_wandb: True
   log_media_interval: 10
   return_scores_by_sample: True
   return_answers: True
   save_results: False
   save_continuously: True
+  compute_stats: False
+  compute_stats_examples: False
+  n_stats_examples: 5

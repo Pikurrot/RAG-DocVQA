@@ -39,11 +39,17 @@ class RAGVT5(torch.nn.Module):
 		print(f"Using {self.cache_dir} as cache folder")
 		self.train_layout = config.get("train_layout", False)
 		self.train_embedder = config.get("train_embed", False)
-		self.train_generator = config["train_language_backbone"] or config["train_spatial_embedding"] or config["train_visual_embedding"] or config["train_layout_embedding"]
+		self.train_generator = (
+			config.get("train_language_backbone", False) or
+			config.get("train_spatial_embedding", False) or
+			config.get("train_visual_embedding", False) or
+			config.get("train_layout_embedding", False)
+		)
 		self.train_mode = False
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})
 		t5_config.layout_loss_weight = config.get("layout_loss_weight", 1.0)
+		t5_config.update(config)
 
 		# Load components
 		if self.layout_model_weights and self.page_retrieval != "oracle":
@@ -57,7 +63,6 @@ class RAGVT5(torch.nn.Module):
 		self.generator = VT5ForConditionalGeneration.from_pretrained(
 			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
 		)
-		self.generator.load_config(config)
 		if self.add_sep_token:
 			# Add the chunk separator token to the tokenizer if not already present
 			token_id = self.generator.tokenizer.encode("<sep>", add_special_tokens=False)

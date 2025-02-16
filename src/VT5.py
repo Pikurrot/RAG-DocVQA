@@ -2,7 +2,8 @@ import numpy as np
 import random
 import torch
 import os
-from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneration
+from transformers import PreTrainedModel, T5Tokenizer
+from src.LayoutT5 import LayoutT5ForConditionalGeneration
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
 from src._model_utils import shift_tokens_right, get_generative_confidence
 from typing import Any, Tuple, Optional
@@ -14,10 +15,18 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 	def __init__(self, config: CustomT5Config):
 		super().__init__(config)
 		self.tokenizer = T5Tokenizer.from_pretrained(config._name_or_path, ignore_mismatched_sizes=True)
-		self.language_backbone = T5ForConditionalGeneration(config)
+		self.language_backbone = LayoutT5ForConditionalGeneration(config)
 		self.spatial_embedding = SpatialEmbeddings(config)
 		self.visual_embedding = VisualEmbeddings(config)
 		self.layout_embedding = torch.nn.Embedding(12, self.language_backbone.model_dim)
+		self.layout_embedding_scale = torch.nn.Parameter(torch.tensor(1.0))
+
+	def post_init(self):
+		"""Initialize weights after model is loaded"""
+		super().post_init()
+		with torch.no_grad():
+			torch.nn.init.xavier_normal_(self.language_backbone.layout_classifier.weight, gain=1.0)
+			torch.nn.init.zeros_(self.language_backbone.layout_classifier.bias)
 
 	@classmethod
 	def from_pretrained(cls, model_path: str, **kwargs):
@@ -54,7 +63,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		if not config["train_layout_embedding"]:
 			for param in self.layout_embedding.parameters():
 				param.requires_grad = False
-		self.layout_embedding_scale = config.get("layout_embedding_scale", 1.0)
+		self.layout_embedding_scale.data.fill_(float(config.get("layout_embedding_scale", 1.0)))
 
 	def to(self, device: Any):
 		self.language_backbone.to(device)
@@ -168,10 +177,14 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		else:
 			labels = None
 
+		to_return = (tensor_attention_mask, labels)
 		if return_ids:
-			return tensor_input_ids, tensor_attention_mask, labels
+			to_return = (tensor_input_ids, *to_return)
 		else:
-			return input_embeds, tensor_attention_mask, labels
+			to_return = (input_embeds, *to_return)
+		if layout_labels:
+			to_return = (*to_return, tensor_layout_labels)
+		return to_return
 
 	def forward(self, batch: dict, return_pred_answer: bool=False):
 		question = batch["questions"]
@@ -184,7 +197,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		images = batch["images"]
 		answers = batch.get("answers", None)
 
-		input_embeds, attention_mask, labels = self.prepare_inputs_for_vqa(question, words, boxes, layout_labels, images, answers)
+		input_embeds, attention_mask, labels, tensor_layout_labels = self.prepare_inputs_for_vqa(
+			question, words, boxes, layout_labels, images, answers
+		)
 
 		if labels is not None:
 			decoder_input_ids = shift_tokens_right(
@@ -198,7 +213,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				inputs_embeds=input_embeds,
 				decoder_inputs_embeds=decoder_inputs_embeds,
 				attention_mask=attention_mask,
-				labels=labels)
+				labels=labels,
+				layout_labels=tensor_layout_labels
+			)
 			if return_pred_answer:
 				pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
 			else:

@@ -32,7 +32,8 @@ class Logger:
 		if page_tokens:
 			config["PAGE tokens"] = page_tokens
 
-		self.logger = wb.init(project="RAG-DocVQA", name=self.experiment_name, dir=self.log_folder, tags=tags, config=config)
+		if self.log_wandb:
+			self.logger = wb.init(project="RAG-DocVQA", name=self.experiment_name, dir=self.log_folder, tags=tags, config=config)
 		self._print_config(config)
 
 		self.current_epoch = 0
@@ -53,10 +54,11 @@ class Logger:
 		total_params = sum(p.numel() for p in model.generator.parameters())
 		trainable_params = sum(p.numel() for p in model.generator.parameters() if p.requires_grad)
 
-		self.logger.config.update({
-			"Model Params": int(total_params / 1e6),  # In millions
-			"Model Trainable Params": int(trainable_params / 1e6)  # In millions
-		})
+		if self.log_wandb:
+			self.logger.config.update({
+				"Model Params": int(total_params / 1e6),  # In millions
+				"Model Trainable Params": int(trainable_params / 1e6)  # In millions
+			})
 
 		print("Model parameters: {:d} - Trainable: {:d} ({:2.2f}%)".format(
 			total_params, trainable_params, trainable_params / total_params * 100))
@@ -72,7 +74,7 @@ class Logger:
 
 		str_msg = "Epoch {:d}: Accuracy {:2.4f}     ANLS {:2.4f}    Retrieval precision: {:2.4f}   Avg. chunk score: {:2.4f}"\
 			.format(self.current_epoch, accuracy, anls, retrieval_precision, avg_chunk_score)
-		self.logger.log({
+		self.log({
 			"Val/Epoch Accuracy": accuracy,
 			"Val/Epoch ANLS": anls,
 			"Val/Epoch Ret. Prec": retrieval_precision,
@@ -81,10 +83,11 @@ class Logger:
 
 		if update_best:
 			str_msg += "\tBest Accuracy!"
-			self.logger.config.update({
-				"Best Accuracy": accuracy,
-				"Best epoch": self.current_epoch
-			}, allow_val_change=True)
+			if self.log_wandb:
+				self.logger.config.update({
+					"Best Accuracy": accuracy,
+					"Best epoch": self.current_epoch
+				}, allow_val_change=True)
 
 		print(str_msg)
 

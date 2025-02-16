@@ -7,8 +7,9 @@ import numpy as np
 from time import time
 from contextlib import nullcontext
 
-class RAGVT5:
+class RAGVT5(torch.nn.Module):
 	def __init__(self, config: dict):
+		super(RAGVT5, self).__init__()
 		# Load config
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
 		self.embed_path = config.get("embed_weights", None)
@@ -42,6 +43,7 @@ class RAGVT5:
 		self.train_mode = False
 		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 		t5_config.visual_module_config = config.get("visual_module", {})
+		t5_config.layout_loss_weight = config.get("layout_loss_weight", 1.0)
 
 		# Load components
 		if self.layout_model_weights and self.page_retrieval != "oracle":

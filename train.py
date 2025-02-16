@@ -51,6 +51,9 @@ def train_epoch(
 		loss = outputs.loss + outputs.ret_loss if hasattr(outputs, "ret_loss") else outputs.loss
 
 		loss.backward()
+		torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+
+		# Log gradients
 		grad_norms = {}
 		for name, module in modules.items():
 			# Only consider modules with parameters that have gradients
@@ -60,7 +63,6 @@ def train_epoch(
 
 		optimizer.step()
 		lr_scheduler.step()
-
 		optimizer.zero_grad()
 
 		metric = evaluator.get_metrics(gt_answers, pred_answers)
@@ -74,6 +76,9 @@ def train_epoch(
 			"Train/Batch ANLS": batch_anls,
 			"Train/lr": optimizer.param_groups[0]["lr"],
 			"Train/Batch Grad Norm": grad_norms,
+			"Train/Batch lm_loss": outputs.lm_loss.item(),
+			"Train/Batch layout_loss": outputs.layout_loss.item(),
+			"Train/layout_embedding_scale": model.generator.layout_embedding_scale.item()
 		}
 
 		if hasattr(outputs, "ret_loss"):
@@ -129,7 +134,9 @@ def train(
 		eval_res = evaluate(
 			val_data_loader,
 			model, evaluator, logger_eval,
-			config
+			config,
+			filename=filename,
+			start_time=start_time
 		)
 		print(f"Epoch {epoch_ix} completed")
 		is_updated = evaluator.update_global_metrics(eval_res["accuracy"], eval_res["anls"], epoch_ix)
@@ -144,7 +151,7 @@ if __name__ == "__main__":
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
 		"batch_size": 4,
-		"batch_size_eval": 40,
+		"batch_size_eval": 4,
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -161,11 +168,12 @@ if __name__ == "__main__":
 		"train_visual_embedding": False,
 		"train_layout_embedding": True,
 		"layout_embedding_scale": 10.0,
+		"layout_loss_weight": 1.0,
 	}
 	extra_args = {
-		"visible_devices": "5",
+		"visible_devices": "2",
 		"save_folder": "9-train_generator_with_layout",
-		"save_name_append": "train_generator_x10",
+		"save_name_append": "train_generator_layout_loss_scale10",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,

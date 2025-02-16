@@ -10,7 +10,7 @@ data_parallel: False
 training_parameters:
   lr: 2e-4
   batch_size: 4
-  train_epochs: 10
+  train_epochs: 2
   warmup_iterations: 1000
 
 visual_module:

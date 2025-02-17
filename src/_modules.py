@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 import cv2
 import gc
+from doclayout_yolo import YOLOv10
+from huggingface_hub import hf_hub_download
 from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
 from sentence_transformers import SentenceTransformer
 from torch.nn import LayerNorm as BertLayerNorm, CrossEntropyLoss
@@ -11,6 +13,7 @@ from typing import Optional, Any, Dict, List, Tuple, Literal
 from collections import Counter
 from PIL import Image
 from time import time
+from abc import ABC, abstractmethod
 from src.utils import containment_ratio
 from src._model_utils import mean_pooling
 
@@ -84,16 +87,16 @@ class VisualEmbeddings(nn.Module):
 		super(VisualEmbeddings, self).__init__()
 
 		self.feature_extractor = AutoFeatureExtractor.from_pretrained(
-			config.visual_module_config['model_weights'],
+			config.visual_module_config["model_weights"],
 			ignore_mismatched_sizes=True
 		)
 		self.image_model = AutoModel.from_pretrained(
-			config.visual_module_config['model_weights'],
+			config.visual_module_config["model_weights"],
 			ignore_mismatched_sizes=True
 		)
 		self.visual_emb_matcher = MLP(self.image_model.config.hidden_size, 0, self.image_model.config.hidden_size, 1)
 
-		if not config.visual_module_config.get('finetune', False):
+		if not config.visual_module_config.get("finetune", False):
 			self.freeze()
 
 	def freeze(self):
@@ -130,10 +133,10 @@ class PageRetrievalModule(nn.Module):
 		self.page_retrieval = nn.Linear(config.max_doc_pages * config.page_tokens * config.hidden_size, config.max_doc_pages)
 		# TODO Check if BinaryCrossEntropy allows to extend to longer sequences.
 
-		if config.page_retrieval_config['loss'].lower() in ['ce', 'crossentropy', 'crossentropyloss']:
+		if config.page_retrieval_config["loss"].lower() in ["ce", "crossentropy", "crossentropyloss"]:
 			self.retrieval_criterion = CrossEntropyLoss()
 
-		self.retrieval_loss_weight = config.page_retrieval_config['loss_weight']
+		self.retrieval_loss_weight = config.page_retrieval_config["loss_weight"]
 
 	def forward(self, document_embeddings, answer_page_idx):
 		document_embeddings = document_embeddings.view([len(document_embeddings), -1])
@@ -220,20 +223,44 @@ class StatComponent:
 				pass
 
 
-class LayoutModel(torch.nn.Module, StatComponent):
-	layout_map = {
-		0: 'Background',
-		1: 'Caption',
-		2: 'Footnote',
-		3: 'Formula',
-		4: 'List-item',
-		5: 'Page-footer',
-		6: 'Page-header',
-		7: 'Picture',
-		8: 'Section-header',
-		9: 'Table',
-		10: 'Text',
-		11: 'Title'
+class LayoutModelBase(torch.nn.Module, StatComponent, ABC):
+	@property
+	@abstractmethod
+	def layout_map(self) -> dict:
+		pass
+
+	@abstractmethod
+	def forward(
+			self,
+			images: List[Image.Image],
+			return_steps: bool=False
+	) -> Tuple[List[dict], List[dict]]:
+		pass
+
+	@abstractmethod
+	def batch_forward(
+			self,
+			images: List[List[Image.Image]],
+			return_steps: bool=False,
+			**kwargs
+	):
+		pass
+
+
+class LayoutModelDIT(LayoutModelBase):
+	_layout_map = {
+		0: "Background",
+		1: "Caption",
+		2: "Footnote",
+		3: "Formula",
+		4: "List-item",
+		5: "Page-footer",
+		6: "Page-header",
+		7: "Picture",
+		8: "Section-header",
+		9: "Table",
+		10: "Text",
+		11: "Title"
 	}
 
 	def __init__(self, config: dict):
@@ -257,10 +284,14 @@ class LayoutModel(torch.nn.Module, StatComponent):
 			self.stats["n_layouts_per_page_dist"] = Counter()
 			self.stats["layouts_size_w_dist"] = Counter()
 			self.stats["layouts_size_h_dist"] = Counter()
-			self.stats["layout_labels_dist"] = {LayoutModel.layout_map[label]: 0 for label in LayoutModel.layout_map}
+			self.stats["layout_labels_dist"] = {LayoutModelDIT.layout_map[label]: 0 for label in LayoutModelDIT.layout_map}
 			self.stats_examples["n_layouts_per_page_dist"] = {}
 			self.stats_examples["layouts_size_w_dist"] = {}
 			self.stats_examples["layouts_size_h_dist"] = {}
+
+	@property
+	def layout_map(self) -> dict:
+		return LayoutModelDIT._layout_map
 
 	def _filter_detections(
 			self,
@@ -287,7 +318,7 @@ class LayoutModel(torch.nn.Module, StatComponent):
 		Returns:
 		- Filtered boxes and labels.
 		"""
-		assert condition in {"or", "and", "small", "overlap"}, "Condition must be 'or' or 'and'."
+		assert condition in {"or", "and", "small", "overlap"}, "Condition must be "or" or "and"."
 		h, w = image_size
 		filtered_boxes, filtered_labels = [], []
 
@@ -501,7 +532,7 @@ class LayoutModel(torch.nn.Module, StatComponent):
 							self.stat_add_example("layouts_size_h_dist", h, f"{question_id[b]}_p{p}")
 					# layout_labels_dist
 					for label in layout_info[b][p]["labels"]:
-						self.stats["layout_labels_dist"][LayoutModel.layout_map[label]] += 1
+						self.stats["layout_labels_dist"][LayoutModelDIT.layout_map[label]] += 1
 		
 		if return_steps:
 			steps = {
@@ -511,6 +542,213 @@ class LayoutModel(torch.nn.Module, StatComponent):
 		else:
 			steps = {}
 		return layout_info, steps
+
+
+class LayoutModelYOLO(LayoutModelBase):
+	_layout_map_raw = {
+		0: "title",
+		1: "plain text",
+		2: "abandon",
+		3: "figure",
+		4: "figure_caption",
+		5: "table",
+		6: "table_caption",
+		7: "table_footnote",
+		8: "isolate_formula",
+		9: "formula_caption"
+	}
+
+	_layout_map = {
+		0: "title",
+		1: "plain text",
+		2: "figure",
+		3: "table"
+	}
+
+	def __init__(self, config: dict):
+		torch.nn.Module.__init__(self)
+		StatComponent.__init__(self, config)
+
+		# Load config
+		repo_id = config.get("layout_model_weights", "juliozhao/DocLayout-YOLO-DocStructBench")
+		self.device = config["device"]
+		self.cache_dir = config["cache_dir"]
+		self.use_layout_labels = config["use_layout_labels"]
+		self.layout_bs = config["layout_batch_size"]
+
+		# Load layout model
+		model_path = hf_hub_download(
+			repo_id=repo_id,
+			filename="doclayout_yolo_docstructbench_imgsz1024.pt",
+			cache_dir=self.cache_dir
+		)
+		self.model = YOLOv10(model_path)
+		self.model.to(self.device)
+
+	@property
+	def layout_map(self) -> dict:
+		return LayoutModelYOLO._layout_map
+
+	def _filter_detections(
+			self,
+			boxes: List[List[float]],
+			labels: List[int]
+	) -> Tuple[List[List[float]], List[int]]:
+		"""
+		Filters bounding boxes based label relevance.
+
+		Args:
+		- boxes: List of bounding boxes [xmin, ymin, xmax, ymax].
+		- labels: List of labels corresponding to boxes.
+
+		Returns:
+		- Filtered boxes and labels.
+		"""
+		label_map = {
+			0: 0,
+			1: 1,
+			2: 1,
+			3: 2,
+			4: 2,
+			5: 3,
+			6: 3,
+			7: 3,
+			8: None,
+			9: None
+		}
+		filtered_boxes, filtered_labels = [], []
+		for box, label in zip(boxes, labels):
+			if label_map[label] is not None:
+				filtered_boxes.append(box)
+				filtered_labels.append(label_map[label])
+		return filtered_boxes, filtered_labels
+
+	def forward(
+			self,
+			images: List[Image.Image],
+			return_steps: bool=False
+	) -> Tuple[List[dict], List[dict]]:
+		# Forward pass
+		det_res = self.model.predict(
+			images,
+			imgsz=1024,
+			conf=0.2,
+			device=self.device
+		)
+
+		# Find bounding boxes
+		bbox_pred = []
+		for res in det_res:
+			boxes_, labels_ = [], []
+			for box, label in zip(res.boxes.xyxyn, res.boxes.cls):
+				boxes_.append(box.cpu().numpy().tolist()) # normalized
+				labels_.append(label)
+			bbox_pred.append(dict(boxes=boxes_, labels=labels_))
+		del det_res
+		gc.collect()
+		torch.cuda.empty_cache()
+
+		# Filter bounding boxes by label
+		bbox_pred_filtered = []
+		for i, (image, img_preds) in enumerate(zip(images, bbox_pred)):
+			filtered_boxes, filtered_labels = self._filter_detections(
+				img_preds["boxes"], img_preds["labels"]
+			)
+			bbox_pred_filtered.append(dict(boxes=filtered_boxes, labels=filtered_labels))
+
+		if return_steps:
+			steps = {
+				"layout_info_raw": bbox_pred
+			}
+		else:
+			steps = {}
+		return bbox_pred_filtered, steps
+	
+	def batch_forward(
+			self,
+			images: List[List[Image.Image]], # (bs, n_pages)
+			return_steps: bool=False,
+			**kwargs
+	):
+		"""
+		Process a batch of images
+		"""
+		question_id = kwargs.get("question_id", None)
+		bs = len(images)
+		start_time = time()
+		flatten_images = []
+		for b in range(bs):
+			page_images = images[b]
+			flatten_images.extend(page_images)
+		
+		# Divide into batches of layout_bs
+		new_batches = []
+		for i in range(0, len(flatten_images), self.layout_bs):
+			batch_images = flatten_images[i:i + self.layout_bs]
+			new_batches.append(batch_images)
+
+		# Process batches and flatten again
+		flatten_layout_info = []
+		flatten_layout_info_raw = []
+		for batch_images in new_batches:
+			batch_layout_boxes, steps = self(batch_images, return_steps=True)
+			flatten_layout_info.extend(batch_layout_boxes)
+			flatten_layout_info_raw.extend(steps["layout_info_raw"])
+
+		# Reshape flatten_layout_boxes back to (bs, n_pages, n_boxes, 4)
+		layout_info = []
+		layout_info_raw = []
+		index = 0
+		for b in range(bs):
+			page_layouts = []
+			page_info_raw = []
+			for p in range(len(images[b])):
+				page_layouts.append(flatten_layout_info[index])
+				page_info_raw.append(flatten_layout_info_raw[index])
+				index += 1
+			layout_info.append(page_layouts)
+			layout_info_raw.append(page_info_raw)
+		
+		if self.compute_stats:
+			self.stats["layout_time"] = time() - start_time
+			for b in range(bs):
+				for p in range(len(layout_info[b])):
+					# n_layouts_per_page_dist
+					n_layouts = len(layout_info[b][p]["boxes"])
+					self.stats["n_layouts_per_page_dist"][n_layouts] += 1
+					if question_id:
+						self.stat_add_example("n_layouts_per_page_dist", n_layouts, f"{question_id[b]}_p{p}")
+					# layouts_size_w_dist, layouts_size_h_dist
+					for box in layout_info[b][p]["boxes"]:
+						w = box[2] - box[0]
+						h = box[3] - box[1]
+						self.stats["layouts_size_w_dist"][w] += 1
+						self.stats["layouts_size_h_dist"][h] += 1
+						if question_id:
+							self.stat_add_example("layouts_size_w_dist", w, f"{question_id[b]}_p{p}")
+							self.stat_add_example("layouts_size_h_dist", h, f"{question_id[b]}_p{p}")
+					# layout_labels_dist
+					for label in layout_info[b][p]["labels"]:
+						self.stats["layout_labels_dist"][LayoutModelYOLO.layout_map[label]] += 1
+
+		if return_steps:
+			steps = {
+				"layout_info_raw": layout_info_raw
+			}
+		else:
+			steps = {}
+		return layout_info, steps
+
+
+class LayoutModel(LayoutModelBase):
+	def __new__(cls, config: dict):
+		model_choice = config.get("layout_model")
+		if model_choice == "YOLO":
+			return LayoutModelYOLO(config)
+		elif model_choice == "DIT":
+			return LayoutModelDIT(config)
+		else:
+			raise ValueError(f"Invalid layout model choice: {model_choice}")
 
 
 class Chunker(StatComponent):

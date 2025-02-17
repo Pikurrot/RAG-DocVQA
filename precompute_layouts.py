@@ -70,6 +70,7 @@ def worker_process(gpu_id, num_gpus, config, shared_dict):
 def main():
 	args = {
 		"model": "RAGVT5",
+		"layout_model": "YOLO", # YOLO, DIT
 		"dataset": "MP-DocVQA",
 		"batch_size": 10,
 		"layout_batch_size": 10,

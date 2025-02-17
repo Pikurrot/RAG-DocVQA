@@ -3,25 +3,13 @@ from torch.utils.data import DataLoader
 from src.build_utils import build_model, build_dataset
 from src.utils import load_config
 from src.MP_DocVQA import mpdocvqa_collate_fn
+from src._modules import LayoutModel
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import argparse
 import os
 
-layout_map = {
-	0: 'Background',
-	1: 'Caption',
-	2: 'Footnote',
-	3: 'Formula',
-	4:'List-item',
-	5: 'Page-footer',
-	6: 'Page-header',
-	7:'Picture',
-	8: 'Section-header',
-	9: 'Table',
-	10: 'Text',
-	11: 'Title'
-}
+layout_map = LayoutModel.layout_map
 
 color_map = {
 	0: 'red',
@@ -239,8 +227,9 @@ if __name__ == "__main__":
 	print("Starting...")
 	args = {
 		"model": "RAGVT5",
-		"dataset": "MP-DocVQA",
 		"embed_model": "BGE",
+		"layout_model": "YOLO", # YOLO, DIT
+		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
 		"batch_size": 1,
@@ -250,11 +239,29 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "0",
 		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
-		"layout_model_weights": "cmarkea/dit-base-layout-detection",
+		"layout_model_weights": "juliozhao/DocLayout-YOLO-DocStructBench",
 		"use_layout_labels": True,
+		"use_precomputed_layouts": False,
+		"layout_embedding_scale": 1.0,
+		"layout_loss_weight": 1.0,
 	}
+	extra_args = {
+		"visible_devices": "0",
+		"save_folder": "9-train_generator_with_layout",
+		"save_name_append": "train_generator",
+		"val_size": 1.0,
+		"log_wandb": True,
+		"log_media_interval": 10,
+		"return_scores_by_sample": True,
+		"return_answers": True,
+		"save_results": False,
+		"save_continuously": True,
+		"compute_stats": False,
+		"compute_stats_examples": True,
+		"n_stats_examples": 5,
+	}
+	args.update(extra_args)
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
 	config = load_config(args)

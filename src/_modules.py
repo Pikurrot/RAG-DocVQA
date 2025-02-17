@@ -223,11 +223,26 @@ class StatComponent:
 				pass
 
 
+def get_layout_model_map(config: dict) -> dict:
+    model_choice = config.get("layout_model")
+    if model_choice == "YOLO":
+        return LayoutModelYOLO.get_layout_map()
+    elif model_choice == "DIT":
+        return LayoutModelDIT.get_layout_map()
+    else:
+        raise ValueError(f"Invalid layout model choice: {model_choice}")
+
+
 class LayoutModelBase(torch.nn.Module, StatComponent, ABC):
 	@property
 	@abstractmethod
 	def layout_map(self) -> dict:
 		pass
+
+	@classmethod
+	@abstractmethod
+	def get_layout_map(cls):
+		raise 
 
 	@abstractmethod
 	def forward(
@@ -292,6 +307,10 @@ class LayoutModelDIT(LayoutModelBase):
 	@property
 	def layout_map(self) -> dict:
 		return LayoutModelDIT._layout_map
+
+	@classmethod
+	def get_layout_map(cls):
+		return cls._layout_map
 
 	def _filter_detections(
 			self,
@@ -589,6 +608,10 @@ class LayoutModelYOLO(LayoutModelBase):
 	def layout_map(self) -> dict:
 		return LayoutModelYOLO._layout_map
 
+	@classmethod
+	def get_layout_map(cls):
+		return cls._layout_map
+
 	def _filter_detections(
 			self,
 			boxes: List[List[float]],
@@ -642,7 +665,7 @@ class LayoutModelYOLO(LayoutModelBase):
 			boxes_, labels_ = [], []
 			for box, label in zip(res.boxes.xyxyn, res.boxes.cls):
 				boxes_.append(box.cpu().numpy().tolist()) # normalized
-				labels_.append(label)
+				labels_.append(label.item())
 			bbox_pred.append(dict(boxes=boxes_, labels=labels_))
 		del det_res
 		gc.collect()
@@ -658,7 +681,8 @@ class LayoutModelYOLO(LayoutModelBase):
 
 		if return_steps:
 			steps = {
-				"layout_info_raw": bbox_pred
+				"layout_info_raw": bbox_pred,
+				"layout_segments": []
 			}
 		else:
 			steps = {}
@@ -733,7 +757,8 @@ class LayoutModelYOLO(LayoutModelBase):
 
 		if return_steps:
 			steps = {
-				"layout_info_raw": layout_info_raw
+				"layout_info_raw": layout_info_raw,
+				"layout_segments": [[]]
 			}
 		else:
 			steps = {}
@@ -1040,8 +1065,9 @@ class Retriever(StatComponent):
 		super(Retriever, self).__init__(config)
 		self.k = config["chunk_num"]
 		self.include_surroundings = config["include_surroundings"]
+		self.layout_map = get_layout_model_map(config)
 		if self.compute_stats:
-			self.stats["layout_labels_topk_dist"] = {label: 0 for label in LayoutModel.layout_map.values()}
+			self.stats["layout_labels_topk_dist"] = {label: 0 for label in self.layout_map.values()}
 
 	def _get_similarities(
 			self,
@@ -1186,7 +1212,7 @@ class Retriever(StatComponent):
 		for b in range(bs):
 			for c in range(len(top_k_layout_labels[b])):
 				label = top_k_layout_labels[b][c]
-				self.stat_sum("layout_labels_topk_dist", LayoutModel.layout_map[label])
+				self.stat_sum("layout_labels_topk_dist", self.layout_map[label])
 		
 		return (
 			top_k_text, # (bs, k)

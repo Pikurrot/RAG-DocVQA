@@ -2,13 +2,15 @@ import editdistance
 import numpy as np
 from typing import List, Union
 from src.utils import get_similarity_score
-from src._modules import LayoutModel
+from src._modules import get_layout_model_map
 
 class Evaluator:
 	def __init__(
 			self,
+			config: dict,
 			case_sensitive: bool=False
 	):
+		self.layout_map = get_layout_model_map(config)
 		self.case_sensitive = case_sensitive
 		self.get_edit_distance = editdistance.eval
 		self.anls_threshold = 0.5
@@ -27,8 +29,8 @@ class Evaluator:
 		answer_types = answer_types if answer_types is not None else ["string" for batch_idx in range(len(gt_answers))]
 		batch_accuracy = []
 		batch_anls = []
-		layout_labels_accuracy = {value: [] for value in LayoutModel.layout_map.values()}
-		layout_labels_anls = {value: [] for value in LayoutModel.layout_map.values()}
+		layout_labels_accuracy = {value: [] for value in self.layout_map.values()}
+		layout_labels_anls = {value: [] for value in self.layout_map.values()}
 
 		# Compute metrics for each batch element
 		for b in range(len(preds)):
@@ -43,7 +45,7 @@ class Evaluator:
 					batch_accuracy_max = max(batch_accuracy_max, accuracy)
 					batch_anls_max = max(batch_anls_max, anls)
 					if top_k_layout_labels is not None:
-						label = LayoutModel.layout_map[top_k_layout_labels[b][i]]
+						label = self.layout_map[top_k_layout_labels[b][i]]
 						layout_labels_accuracy[label].append(accuracy)
 						layout_labels_anls[label].append(anls)
 				batch_accuracy.append(batch_accuracy_max)
@@ -55,7 +57,7 @@ class Evaluator:
 				if top_k_layout_labels is not None:
 					layout_labels = top_k_layout_labels[b]
 					for label in layout_labels:
-						label = LayoutModel.layout_map[label]
+						label = self.layout_map[label]
 						layout_labels_accuracy[label].append(accurracy)
 						layout_labels_anls[label].append(anls)
 				batch_accuracy.append(accurracy)

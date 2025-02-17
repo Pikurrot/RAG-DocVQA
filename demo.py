@@ -3,13 +3,11 @@ from torch.utils.data import DataLoader
 from src.build_utils import build_model, build_dataset
 from src.utils import load_config
 from src.MP_DocVQA import mpdocvqa_collate_fn
-from src._modules import LayoutModel
+from src._modules import get_layout_model_map
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import argparse
 import os
-
-layout_map = LayoutModel.layout_map
 
 color_map = {
 	0: 'red',
@@ -265,6 +263,8 @@ if __name__ == "__main__":
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
 	config = load_config(args)
+	config["page_retrieval"] = config["page_retrieval"].lower()
+	layout_map = get_layout_model_map(config)
 	print("Building model...")
 	model = build_model(config)
 	print("Building dataset...")

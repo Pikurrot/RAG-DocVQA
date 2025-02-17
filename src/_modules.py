@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import cv2
 import gc
+import logging
 from doclayout_yolo import YOLOv10
 from huggingface_hub import hf_hub_download
 from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
@@ -14,8 +15,10 @@ from collections import Counter
 from PIL import Image
 from time import time
 from abc import ABC, abstractmethod
-from src.utils import containment_ratio
+from src.utils import containment_ratio, non_maximum_suppression
 from src._model_utils import mean_pooling
+
+logging.getLogger("doclayout_yolo").setLevel(logging.WARNING)
 
 class CustomT5Config(T5Config):
 	def __init__(self, max_2d_position_embeddings=1024,  **kwargs):
@@ -615,10 +618,11 @@ class LayoutModelYOLO(LayoutModelBase):
 	def _filter_detections(
 			self,
 			boxes: List[List[float]],
-			labels: List[int]
+			labels: List[int],
+			iou_threshold: float=0.7
 	) -> Tuple[List[List[float]], List[int]]:
 		"""
-		Filters bounding boxes based label relevance.
+		Filters bounding boxes based label relevance and overlapping.
 
 		Args:
 		- boxes: List of bounding boxes [xmin, ymin, xmax, ymax].
@@ -627,6 +631,7 @@ class LayoutModelYOLO(LayoutModelBase):
 		Returns:
 		- Filtered boxes and labels.
 		"""
+		# Map labels to relevant labels
 		label_map = {
 			0: 0,
 			1: 1,
@@ -644,6 +649,12 @@ class LayoutModelYOLO(LayoutModelBase):
 			if label_map[label] is not None:
 				filtered_boxes.append(box)
 				filtered_labels.append(label_map[label])
+		
+		# Filter overlapping boxes (take biggest)
+		keep_indices = non_maximum_suppression(filtered_boxes, iou_threshold=iou_threshold)
+		filtered_boxes = [filtered_boxes[i] for i in keep_indices]
+		filtered_labels = [filtered_labels[i] for i in keep_indices]
+		
 		return filtered_boxes, filtered_labels
 
 	def forward(

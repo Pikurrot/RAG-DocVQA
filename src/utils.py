@@ -274,6 +274,51 @@ def get_similarity_score(a: str, b: str):
 				break
 	return np.log(best_score + 1) / np.log(2)
 
+def compute_iou(box: List[float], boxes: np.ndarray) -> np.ndarray:
+	"""
+	Compute the IoU of a box with an array of boxes.
+	Each box is in [xmin, ymin, xmax, ymax] format.
+	"""
+	xx1 = np.maximum(box[0], boxes[:, 0])
+	yy1 = np.maximum(box[1], boxes[:, 1])
+	xx2 = np.minimum(box[2], boxes[:, 2])
+	yy2 = np.minimum(box[3], boxes[:, 3])
+	w = np.maximum(0, xx2 - xx1)
+	h = np.maximum(0, yy2 - yy1)
+	inter = w * h
+	area_box = (box[2] - box[0]) * (box[3] - box[1])
+	areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+	iou = inter / (area_box + areas - inter + 1e-8)
+	return iou
+
+def non_maximum_suppression(
+	boxes: List[List[float]], 
+	iou_threshold: float = 0.7
+) -> List[int]:
+	"""
+	Run NMS over all boxes; return indices of boxes to keep.
+	Boxes should be in [xmin, ymin, xmax, ymax] format.
+	"""
+	if not boxes:
+		return []
+	
+	boxes_arr = np.array(boxes)
+	areas = (boxes_arr[:, 2] - boxes_arr[:, 0]) * (boxes_arr[:, 3] - boxes_arr[:, 1])
+	order = areas.argsort()[::-1]
+	keep = []
+	
+	while order.size > 0:
+		idx = order[0]
+		keep.append(idx)
+		if order.size == 1:
+			break
+		remaining = order[1:]
+		ious = compute_iou(boxes_arr[idx], boxes_arr[remaining])
+		inds = np.where(ious <= iou_threshold)[0]
+		order = order[inds + 1]
+	
+	return keep
+
 def containment_ratio(
 		small_box: List[int],
 		large_box: List[int]

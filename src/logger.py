@@ -133,6 +133,8 @@ class LoggerEval:
 			self.log_media_counter = 0
 
 	def log_pie_chart(self, key, values):
+		if not self.log_wandb:
+			return
 		labels = list(values.keys())
 		sizes = list(values.values())
 		if all(size == 0 for size in sizes):
@@ -146,6 +148,8 @@ class LoggerEval:
 		plt.close(fig)
 
 	def log_spider_chart(self, key, values_list, legend=None, log_scale=False):
+		if not self.log_wandb:
+			return
 		num_vars = len(values_list[0])  # Number of categories
 		angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
 		angles += angles[:1]  # Close the loop

@@ -582,7 +582,7 @@ class LayoutModelYOLO(LayoutModelBase):
 
 	_layout_map = {
 		0: "title",
-		1: "plain text",
+		1: "text",
 		2: "figure",
 		3: "table"
 	}
@@ -796,6 +796,9 @@ class Chunker(StatComponent):
 		self.overlap = config["overlap"]
 		self.include_surroundings = config["include_surroundings"]
 		self.page_retrieval = config["page_retrieval"]
+		layout_map = get_layout_model_map(config)
+		layout_map = {v: k for k, v in layout_map.items()}
+		self.default_layout_label = layout_map["text"]
 		if self.compute_stats:
 			self.stats = {
 				"chunk_size_dist": Counter(),
@@ -899,8 +902,8 @@ class Chunker(StatComponent):
 					batch_page_indices.append(p)
 					batch_words_text_chunks.append(page_words)
 					batch_words_box_chunks.append(page_boxes)
-					batch_layout_labels_chunks.append(10) # 10 = "text"
-					batch_words_layout_labels_pages.append([10] * len(page_words))
+					batch_layout_labels_chunks.append(self.default_layout_label)
+					batch_words_layout_labels_pages.append([self.default_layout_label] * len(page_words))
 					batch_n_chunks += 1
 					self.stat_sum("chunk_size_dist", len(page_words))
 					self.stat_sum("n_chunks_per_page_dist", 1)
@@ -914,8 +917,8 @@ class Chunker(StatComponent):
 						page_words, page_boxes, p,
 						batch_words_text_chunks, batch_words_box_chunks, batch_page_indices
 					)
-					batch_layout_labels_chunks.extend([10] * page_n_chunks) # 10 = "text"
-					batch_words_layout_labels_pages.append([10] * len(page_words))
+					batch_layout_labels_chunks.extend([self.default_layout_label] * page_n_chunks)
+					batch_words_layout_labels_pages.append([self.default_layout_label] * len(page_words))
 					batch_n_chunks += page_n_chunks
 					self.stat_sum("n_chunks_per_page_dist", page_n_chunks)
 					self.stat_add_example("n_chunks_per_page_dist", page_n_chunks, f"{question_id[b]}_p{p}")
@@ -927,7 +930,7 @@ class Chunker(StatComponent):
 					layout_words_boxes = [] # (n_chunks, n_words, 4)
 					layout_indices = [] # (n_chunks,)
 					page_n_chunks = 0
-					page_words_layout_labels = [10] * len(page_words) # (n_words,)
+					page_words_layout_labels = [self.default_layout_label] * len(page_words) # (n_words,)
 					for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
 						# Find words inside the layout box
 						words_inside = []

@@ -10,16 +10,16 @@ class MPDocVQA(Dataset):
 
 	def __init__(
 			self,
-			imdb_dir: str,
-			images_dir: str,
-			page_retrieval: Literal["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage", "anyconforacle"],
-			split: Literal["train", "val", "test"],
-			kwargs: dict = {}
+			config: dict,
 	):
+		imdb_dir = config["imdb_dir"]
+		images_dir = config["images_dir"]
+		page_retrieval = config["page_retrieval"]
+		split = config["split"]
 		data = np.load(os.path.join(imdb_dir, "imdb_{:s}.npy".format(split)), allow_pickle=True)
 		self.header = data[0]
 		self.imdb = data[1:]
-		size = kwargs.get("size", 1.0)
+		size = config.get("size", 1.0)
 		if isinstance(size, float) and size < 1.0:
 			self.imdb = self.imdb[:int(size*len(self.imdb))]
 		elif isinstance(size, tuple):
@@ -31,14 +31,14 @@ class MPDocVQA(Dataset):
 		self.max_answers = 2
 		self.images_dir = images_dir
 
-		self.use_images = kwargs.get("use_images", False)
-		self.get_raw_ocr_data = kwargs.get("get_raw_ocr_data", False)
-		self.max_pages = kwargs.get("max_pages", 1)
+		self.use_images = config.get("use_images", False)
+		self.get_raw_ocr_data = config.get("get_raw_ocr_data", False)
+		self.max_pages = config.get("max_pages", 1)
 
-		self.use_precomputed_layouts = kwargs.get("use_precomputed_layouts", False)
+		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
 		if self.use_precomputed_layouts:
-			layouts_dir = kwargs.get("layouts_dir", None)
-			layouts_file = os.path.join(layouts_dir, "images_layouts.npz")
+			layouts_dir = config.get("layouts_dir", None)
+			layouts_file = os.path.join(layouts_dir, f"images_layouts_{config['layout_model'].lower()}.npz")
 			self.layout_info = np.load(layouts_file, allow_pickle=True)
 
 	def __len__(self):

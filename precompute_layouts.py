@@ -72,9 +72,9 @@ def main():
 		"model": "RAGVT5",
 		"layout_model": "YOLO", # YOLO, DIT
 		"dataset": "MP-DocVQA",
-		"batch_size": 10,
-		"layout_batch_size": 10,
-		"layout_model_weights": "cmarkea/dit-base-layout-detection",
+		"batch_size": 40,
+		"layout_batch_size": 40,
+		"layout_model_weights": "juliozhao/DocLayout-YOLO-DocStructBench",
 		"use_layout_labels": True,
 		"output_dir": "/data3fast/users/elopez/data",
 	}
@@ -102,7 +102,7 @@ def main():
 	output_dir = config["output_dir"]
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
-	out_filename = os.path.join(output_dir, "images_layouts.npz")
+	out_filename = os.path.join(output_dir, "images_layouts_yolo.npz")
 	np.savez_compressed(out_filename, **aggregated_results)
 	print(f"Merged layout file saved to {out_filename}")
 

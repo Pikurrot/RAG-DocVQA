@@ -410,9 +410,9 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"layout_model": "YOLO", # YOLO, DIT
 		"dataset": "MP-DocVQA",
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 40, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 8,
 		"chunk_num": 10,
 		"chunk_size": 60,
@@ -422,15 +422,15 @@ if __name__ == "__main__":
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "juliozhao/DocLayout-YOLO-DocStructBench",
-		"use_layout_labels": True,
+		"use_layout_labels": False,
 		"use_precomputed_layouts": True,
 		"layout_embedding_scale": 1.0,
 		"layout_loss_weight": 1.0,
 	}
 	extra_args = {
 		"visible_devices": "1",
-		"save_folder": "9-train_generator_with_layout",
-		"save_name_append": "train_generator",
+		"save_folder": "10-yolo_layout",
+		"save_name_append": "yolo_no_labels",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,
@@ -489,7 +489,7 @@ if __name__ == "__main__":
 
 	# Evaluate the model
 	print("Evaluating...")
-	evaluator = Evaluator(case_sensitive=False)
+	evaluator = Evaluator(config, case_sensitive=False)
 	log_media_interval = (len(val_data_loader) // config["log_media_interval"]) if config["save_continuously"] else 1
 	logger = LoggerEval(config, experiment_name, log_media_interval)
 	evaluate(

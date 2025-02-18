@@ -32,16 +32,17 @@ def build_dataset(
 		size: float=1.0,
 		**kwargs
 ):
-	dataset_kwargs = {
+	dataset_config = config.copy()
+	dataset_config.update({
 		"get_raw_ocr_data": True,
 		"use_images": True,
 		"size": size,
-		"layouts_dir": config["layouts_dir"]
-	}
+		"split": split
+	})
 	if config["model_name"] == "Hi-VT5":
-		dataset_kwargs.update({
+		dataset_config.update({
 			"max_pages": config.get("max_pages", 1),
 			"hierarchical_method": True
 		})
-	dataset_kwargs.update(kwargs)
-	return MPDocVQA(config["imdb_dir"], config["images_dir"], config["page_retrieval"], split, dataset_kwargs)
+	dataset_config.update(kwargs)
+	return MPDocVQA(dataset_config)

@@ -227,7 +227,7 @@ def concatenate_patches(
 def flatten(
 		lst: List[list],
 		add_sep_token: bool = True
-	) -> list:
+) -> list:
 	if add_sep_token:
 		# Add a separator token between the sublists
 		flat_list = []

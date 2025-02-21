@@ -4,7 +4,7 @@ import torch
 import os
 from transformers import PreTrainedModel, T5Tokenizer
 from src.LayoutT5 import LayoutT5ForConditionalGeneration
-from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config
+from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config, get_layout_model_map
 from src._model_utils import shift_tokens_right, get_generative_confidence
 from typing import Any, Tuple, Optional
 from safetensors.torch import load_file
@@ -28,7 +28,10 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.language_backbone = LayoutT5ForConditionalGeneration(config)
 		self.spatial_embedding = SpatialEmbeddings(config)
 		self.visual_embedding = VisualEmbeddings(config)
-		self.layout_embedding = torch.nn.Embedding(12, self.language_backbone.model_dim)
+		self.layout_embedding = torch.nn.Embedding(
+			len(get_layout_model_map(config_dict).keys()) + 1,
+			self.language_backbone.model_dim
+		)
 		self.layout_embedding_scale = torch.nn.Parameter(torch.tensor(float(config_dict.get("layout_embedding_scale", 1.0))))
 
 		# Freeze embeddings for training
@@ -98,9 +101,9 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		prompt_box = [0, 0, 1000, 1000]
 		eos_box = [0, 0, 0, 0]
 		padding_box_value = 0  # To become [0, 0, 0, 0] array.
-		prompt_layout_value = 0
-		eos_layout_value = 0
-		padding_layout_value = 0
+		prompt_layout_value = 4
+		eos_layout_value = 4
+		padding_layout_value = 4
 
 		# Get input_ids, boxes, layout_labels and attention_mask
 		longest_seq = 0

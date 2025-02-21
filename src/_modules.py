@@ -5,6 +5,11 @@ import numpy as np
 import cv2
 import gc
 import logging
+import networkx as nx
+from sklearn.cluster import SpectralClustering
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 from doclayout_yolo import YOLOv10
 from huggingface_hub import hf_hub_download
 from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
@@ -266,7 +271,7 @@ class LayoutModelBase(torch.nn.Module, StatComponent, ABC):
 
 
 class LayoutModelDIT(LayoutModelBase):
-	_layout_map = {
+	_layout_map_raw = {
 		0: "Background",
 		1: "Caption",
 		2: "Footnote",
@@ -279,6 +284,12 @@ class LayoutModelDIT(LayoutModelBase):
 		9: "Table",
 		10: "Text",
 		11: "Title"
+	}
+	_layout_map = {
+		0: "title",
+		1: "text",
+		2: "figure",
+		3: "table"
 	}
 
 	def __init__(self, config: dict):
@@ -342,11 +353,31 @@ class LayoutModelDIT(LayoutModelBase):
 		"""
 		assert condition in {"or", "and", "small", "overlap"}, "Condition must be "or" or "and"."
 		h, w = image_size
-		filtered_boxes, filtered_labels = [], []
+
+		# Map labels to relevant labels
+		label_map = {
+			0: None,
+			1: 1,
+			2: 1,
+			3: None,
+			4: 3,
+			5: 1,
+			6: 1,
+			7: 2,
+			8: 0,
+			9: 3,
+			10: 1,
+			11: 0
+		}
+		relevant_boxes, relevant_labels = [], []
+		for box, label in zip(boxes, labels):
+			if label_map[label] is not None:
+				relevant_boxes.append(box)
+				relevant_labels.append(label_map[label])
 
 		# Normalize boxes and compute weighted normalized areas
 		normalized_boxes = [
-			[box[0] / w, box[1] / h, box[2] / w, box[3] / h] for box in boxes
+			[box[0] / w, box[1] / h, box[2] / w, box[3] / h] for box in relevant_boxes
 		]
 		def weighted_area(nb):
 			width = nb[2] - nb[0]
@@ -358,6 +389,7 @@ class LayoutModelDIT(LayoutModelBase):
 		weighted_areas = [weighted_area(nb) for nb in normalized_boxes]
 		params_to_show = []
 
+		filtered_boxes, filtered_labels = [], []
 		for i, box_a in enumerate(normalized_boxes):
 			is_small = weighted_areas[i] < min_area
 			is_overlapping = False
@@ -383,7 +415,7 @@ class LayoutModelDIT(LayoutModelBase):
 
 			if not should_filter:
 				filtered_boxes.append(box_a)
-				filtered_labels.append(labels[i])
+				filtered_labels.append(relevant_labels[i])
 				params_to_show.append(weighted_areas[i])
 
 		# Denormalize the final boxes back to pixel coordinates
@@ -1071,6 +1103,292 @@ class Embedder:
 			:return: list of tensors of embeddings
 		"""
 		return [self.embed(t) for t in text]
+
+
+class S2Chunker:
+	def __init__(
+			self,
+			config: dict,
+			embedder: Embedder
+	):
+		self.config = config
+		self.embedder = embedder
+		self.tokenizer = self.embedder.bge_model.tokenizer
+		self.cluster_mode = config["cluster_mode"]
+		self.calculate_n_clusters = config["calculate_n_clusters"]
+		# self.max_token_length = config["chunk_size"] * (1+config["chunk_size_tol"])
+		self.graph = None
+
+	def create_nodes_and_edges(
+			self,
+			page_layout_info: Dict,
+			page_info: Dict
+	) -> Tuple[List[Dict], List[Tuple]]:
+		page_layout_boxes = page_layout_info["boxes"]
+		page_layout_labels = page_layout_info["labels"]
+		page_words = page_info["ocr_tokens"]
+		page_boxes = page_info["ocr_normalized_boxes"]
+
+		layout_words_text = []
+		layout_words_boxes = []
+		for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
+			# Find words inside the layout box
+			words_inside = []
+			boxes_inside = []
+			for i, (word, box) in enumerate(zip(page_words, page_boxes)):
+				contain_ratio = containment_ratio(box, layout_box)
+				if isinstance(box, np.ndarray):
+					box = box.tolist()
+				if contain_ratio > 0.5:
+					words_inside.append(word)
+					boxes_inside.append(box)
+			layout_words_text.append(words_inside)
+			layout_words_boxes.append(boxes_inside)
+
+		nodes = []
+		edges = []
+		used = np.zeros(len(page_layout_boxes), dtype=bool)
+		i = 0
+		for l, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):  # noqa: E741
+			if not layout_words_text[l]:
+				continue
+			node = {
+				"global_id": i,
+				"page": 1,
+				"bbox": layout_box,
+				"text": " ".join(layout_words_text[l]),
+				"label": layout_label,
+			}
+			nodes.append(node)
+			i += 1
+			used[l] = True
+
+		# Add edges between all nodes
+		for i in range(len(nodes)):
+			for j in range(i + 1, len(nodes)):
+				edges.append((nodes[i]['global_id'], nodes[j]['global_id']))
+		
+		return nodes, edges, used
+
+	def _spatial_weights_calculation(
+			self,
+			nodes: List[Dict]
+	) -> np.ndarray:
+		try:
+			num_nodes = len(nodes)
+			spatial_weights = np.zeros((num_nodes, num_nodes))
+			for i in range(num_nodes):
+				for j in range(num_nodes):
+					bbox_i = nodes[i]['bbox']
+					bbox_j = nodes[j]['bbox']
+					centroid_i = np.array([(bbox_i[0] + bbox_i[2]) / 2, (bbox_i[1] + bbox_i[3]) / 2])
+					centroid_j = np.array([(bbox_j[0] + bbox_j[2]) / 2, (bbox_j[1] + bbox_j[3]) / 2])
+					distance = np.linalg.norm(centroid_i - centroid_j)
+					spatial_weights[i, j] = 1 / (1 + distance)
+			return spatial_weights
+		except Exception as e:
+			print(f"Error in spatial_weights_calculation: {e}")
+			return None
+
+	def _semantic_weights_calculation(
+			self,
+			nodes: List[Dict]
+	) -> np.ndarray:
+		try:
+			texts = [node['text'] for node in nodes if node.get('text', '').strip()]
+
+			with torch.no_grad():
+				embeddings = self.embedder.embed(texts).cpu().numpy()
+			semantic_weights = cosine_similarity(embeddings)
+			return semantic_weights
+		except Exception as e:
+			print(f"Error in semantic_weights_calculation: {e}")
+			return None
+
+	def _combined_weights(
+			self,
+			nodes: List[Dict]
+	) -> np.ndarray:
+		try:
+			spatial_weights = self._spatial_weights_calculation(nodes)
+			if self.cluster_mode == "spatial+semantic":
+				semantic_weights = self._semantic_weights_calculation(nodes)
+			else:
+				semantic_weights = spatial_weights
+			if spatial_weights is None or semantic_weights is None:
+				raise ValueError("Spatial or semantic weight calculation failed.")
+			combined_weights = (spatial_weights + semantic_weights) / 2
+			return combined_weights
+		except Exception as e:
+			print(f"Error in combined_weights: {e}")
+			return None
+
+	def _create_graph(self, nodes: List[int], edges: List[tuple]) -> nx.Graph:
+		graph = nx.Graph()
+		graph.add_nodes_from(nodes)
+		graph.add_edges_from(edges)
+		return graph
+
+	def _add_weights_to_graph(self, graph: nx.Graph, weights: np.ndarray) -> nx.Graph:
+		for i, (u, v) in enumerate(graph.edges()):
+			graph[u][v]['weight'] = weights[u, v]
+		return graph
+
+	def _calculate_n_clusters(
+		self,
+		nodes: List[Dict],
+		weights: np.ndarray,
+		min_k: int = 2,
+		max_k: int = 10
+	) -> int:
+		try:
+			# Compute degree and normalized Laplacian
+			degree = np.sum(weights, axis=1)
+			D_inv_sqrt = np.diag(1.0 / (np.sqrt(degree) + 1e-10))
+			L_norm = np.eye(weights.shape[0]) - D_inv_sqrt @ weights @ D_inv_sqrt
+
+			# Compute eigenvalues and eigenvectors
+			eigenvalues, eigenvectors = np.linalg.eigh(L_norm)
+			# Use the smallest 'max_k' eigenvectors for spectral embedding
+			embedding = eigenvectors[:, :max_k]
+
+			best_k = min_k
+			best_score = -1
+			best_labels = None
+			# Try different k values and choose the one with the highest silhouette score
+			for k in range(min_k, min(max_k, len(nodes)) + 1):
+				if self.calculate_n_clusters == "heuristic":
+					kmeans = KMeans(n_clusters=k, random_state=0).fit(embedding)
+					labels = kmeans.labels_
+				elif self.calculate_n_clusters == "best":
+					clustering = SpectralClustering(n_clusters=k, affinity='precomputed')
+					labels = clustering.fit_predict(weights)
+				score = silhouette_score(embedding, labels)
+				if score > best_score:
+					best_score = score
+					best_k = k
+					best_labels = labels
+			return best_k, best_labels
+		except Exception as e:
+			print(f"Error in _calculate_n_clusters: {e}")
+			return 1
+
+	def _cluster_graph(
+			self,
+			graph: nx.Graph,
+			weights: np.ndarray,
+			n_clusters: int = 3
+	) -> Dict[int, int]:
+		try:
+			clustering = SpectralClustering(n_clusters=n_clusters, affinity='precomputed')
+			labels = clustering.fit_predict(weights)
+			return {node: label for node, label in zip(graph.nodes(), labels)}
+		except Exception as e:
+			print(f"Error in clustering graph: {e}")
+			return {}
+
+	def _group_nodes_by_cluster(self, clusters: Dict[int, int]) -> Dict[int, List[int]]:
+		cluster_groups = {}
+		for node, cluster_id in clusters.items():
+			if cluster_id not in cluster_groups:
+				cluster_groups[cluster_id] = []
+			cluster_groups[cluster_id].append(node)
+		return cluster_groups
+
+	def _split_clusters_by_token_length(
+			self,
+			clusters: Dict[int, int],
+			nodes: List[Dict]
+	) -> Dict[int, int]:
+		updated_clusters = {}
+		cluster_id_counter = 0
+
+		for cluster_id, node_ids in self._group_nodes_by_cluster(clusters).items():
+			current_chunk = []
+			current_token_length = 0
+
+			for node_id in node_ids:
+				node = next((n for n in nodes if n['global_id'] == node_id), None)
+				if not node:
+					continue
+				node_text = node['text']
+				node_token_length = len(self.tokenizer.tokenize(node_text))
+
+				if current_token_length + node_token_length > self.max_token_length:
+					for node_in_chunk in current_chunk:
+						updated_clusters[node_in_chunk] = cluster_id_counter
+					cluster_id_counter += 1
+					current_chunk = []
+					current_token_length = 0
+
+				current_chunk.append(node_id)
+				current_token_length += node_token_length
+
+			for node_in_chunk in current_chunk:
+				updated_clusters[node_in_chunk] = cluster_id_counter
+			cluster_id_counter += 1
+
+		return updated_clusters
+
+	def cluster(
+			self,
+			nodes: List[Dict],
+			edges: List[tuple]
+	) -> Dict[int, int]:
+		try:
+			node_ids = [node['global_id'] for node in nodes]
+			# print(node_ids, edges)
+			graph = self._create_graph(node_ids, edges)
+			weights = self._combined_weights(nodes)
+			if weights is None:
+				print("Weight calculation failed. Returning empty clusters.")
+				return {}
+
+			weighted_graph = self._add_weights_to_graph(graph, weights)
+			self.graph = weighted_graph
+
+			n_clusters, best_labels = self._calculate_n_clusters(nodes, weights)
+			if self.calculate_n_clusters == "ehuristic":
+				clusters = self._cluster_graph(weighted_graph, weights, n_clusters)
+			else:
+				clusters = {node: label for node, label in zip(graph.nodes(), best_labels)}
+			# clusters = self._split_clusters_by_token_length(clusters, nodes)
+
+			return clusters
+		except Exception as e:
+			print(f"Error in cluster: {e}")
+			return {}
+
+	def forward(
+			self,
+			layout_info: List[Dict],
+			pages_info: List[Dict]
+	) -> List[Dict]:
+		batch_clusters = []
+		for p, (page_layout_info, page_info) in enumerate(zip(layout_info, pages_info)):
+			try:
+				if len(page_layout_info["boxes"]) == 0:
+					batch_clusters.append(np.array([]))
+					continue
+				if page_info is None:
+					batch_clusters.append(np.full(len(page_layout_info["boxes"]), -1))
+					continue
+				nodes, edges, used = self.create_nodes_and_edges(page_layout_info, page_info)
+				clusters = self.cluster(nodes, edges)
+				clusters = sorted(clusters.items(), key=lambda item: item[0])
+				clusters = [x[1] for x in clusters]
+				complete_clusters = np.full(len(used), -1)
+				complete_clusters[used] = clusters
+				batch_clusters.append(complete_clusters)
+			except Exception as e:
+				print("p: ", p)
+				print("page_layout_info:", page_layout_info)
+				print("page_info:", page_info)
+				raise e
+		return batch_clusters
+
+	def __call__(self, *args, **kwds):
+		return self.forward(*args, **kwds)
 
 
 class Retriever(StatComponent):

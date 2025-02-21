@@ -1109,15 +1109,19 @@ class S2Chunker:
 	def __init__(
 			self,
 			config: dict,
-			embedder: Embedder
+			embedder: Optional[Embedder]=None
 	):
 		self.config = config
-		self.embedder = embedder
-		self.tokenizer = self.embedder.bge_model.tokenizer
 		self.cluster_mode = config["cluster_mode"]
 		self.calculate_n_clusters = config["calculate_n_clusters"]
 		# self.max_token_length = config["chunk_size"] * (1+config["chunk_size_tol"])
 		self.graph = None
+		if self.cluster_mode == "spatial+semantic":
+			if embedder is None:
+				self.embedder = Embedder(config)
+			else:
+				self.embedder = embedder
+				self.tokenizer = self.embedder.bge_model.tokenizer
 
 	def create_nodes_and_edges(
 			self,
@@ -1209,19 +1213,15 @@ class S2Chunker:
 			self,
 			nodes: List[Dict]
 	) -> np.ndarray:
-		try:
-			spatial_weights = self._spatial_weights_calculation(nodes)
-			if self.cluster_mode == "spatial+semantic":
-				semantic_weights = self._semantic_weights_calculation(nodes)
-			else:
-				semantic_weights = spatial_weights
-			if spatial_weights is None or semantic_weights is None:
-				raise ValueError("Spatial or semantic weight calculation failed.")
-			combined_weights = (spatial_weights + semantic_weights) / 2
-			return combined_weights
-		except Exception as e:
-			print(f"Error in combined_weights: {e}")
-			return None
+		spatial_weights = self._spatial_weights_calculation(nodes)
+		if self.cluster_mode == "spatial+semantic":
+			semantic_weights = self._semantic_weights_calculation(nodes)
+		else:
+			semantic_weights = spatial_weights
+		if spatial_weights is None or semantic_weights is None:
+			raise ValueError("Spatial or semantic weight calculation failed.")
+		combined_weights = (spatial_weights + semantic_weights) / 2
+		return combined_weights
 
 	def _create_graph(self, nodes: List[int], edges: List[tuple]) -> nx.Graph:
 		graph = nx.Graph()
@@ -1241,37 +1241,34 @@ class S2Chunker:
 		min_k: int = 2,
 		max_k: int = 10
 	) -> int:
-		try:
-			# Compute degree and normalized Laplacian
-			degree = np.sum(weights, axis=1)
-			D_inv_sqrt = np.diag(1.0 / (np.sqrt(degree) + 1e-10))
-			L_norm = np.eye(weights.shape[0]) - D_inv_sqrt @ weights @ D_inv_sqrt
+		# Compute degree and normalized Laplacian
+		degree = np.sum(weights, axis=1)
+		D_inv_sqrt = np.diag(1.0 / (np.sqrt(degree) + 1e-10))
+		L_norm = np.eye(weights.shape[0]) - D_inv_sqrt @ weights @ D_inv_sqrt
 
-			# Compute eigenvalues and eigenvectors
-			eigenvalues, eigenvectors = np.linalg.eigh(L_norm)
-			# Use the smallest 'max_k' eigenvectors for spectral embedding
-			embedding = eigenvectors[:, :max_k]
+		# Compute eigenvalues and eigenvectors
+		eigenvalues, eigenvectors = np.linalg.eigh(L_norm)
+		# Use the smallest 'max_k' eigenvectors for spectral embedding
+		embedding = eigenvectors[:, :max_k]
 
-			best_k = min_k
-			best_score = -1
-			best_labels = None
-			# Try different k values and choose the one with the highest silhouette score
-			for k in range(min_k, min(max_k, len(nodes)) + 1):
-				if self.calculate_n_clusters == "heuristic":
-					kmeans = KMeans(n_clusters=k, random_state=0).fit(embedding)
-					labels = kmeans.labels_
-				elif self.calculate_n_clusters == "best":
-					clustering = SpectralClustering(n_clusters=k, affinity='precomputed')
-					labels = clustering.fit_predict(weights)
-				score = silhouette_score(embedding, labels)
-				if score > best_score:
-					best_score = score
-					best_k = k
-					best_labels = labels
-			return best_k, best_labels
-		except Exception as e:
-			print(f"Error in _calculate_n_clusters: {e}")
-			return 1
+		best_k = min_k
+		best_score = -1
+		best_labels = None
+		# Try different k values and choose the one with the highest silhouette score
+		upper_bound = min(max_k, len(nodes) - 1) # k < n_samples or error
+		for k in range(min_k, upper_bound + 1):
+			if self.calculate_n_clusters == "heuristic":
+				kmeans = KMeans(n_clusters=k, random_state=0).fit(embedding)
+				labels = kmeans.labels_
+			elif self.calculate_n_clusters == "best":
+				clustering = SpectralClustering(n_clusters=k, affinity='precomputed')
+				labels = clustering.fit_predict(weights)
+			score = silhouette_score(embedding, labels)
+			if score > best_score:
+				best_score = score
+				best_k = k
+				best_labels = labels
+		return best_k, best_labels
 
 	def _cluster_graph(
 			self,
@@ -1279,13 +1276,9 @@ class S2Chunker:
 			weights: np.ndarray,
 			n_clusters: int = 3
 	) -> Dict[int, int]:
-		try:
-			clustering = SpectralClustering(n_clusters=n_clusters, affinity='precomputed')
-			labels = clustering.fit_predict(weights)
-			return {node: label for node, label in zip(graph.nodes(), labels)}
-		except Exception as e:
-			print(f"Error in clustering graph: {e}")
-			return {}
+		clustering = SpectralClustering(n_clusters=n_clusters, affinity='precomputed')
+		labels = clustering.fit_predict(weights)
+		return {node: label for node, label in zip(graph.nodes(), labels)}
 
 	def _group_nodes_by_cluster(self, clusters: Dict[int, int]) -> Dict[int, List[int]]:
 		cluster_groups = {}
@@ -1335,29 +1328,25 @@ class S2Chunker:
 			nodes: List[Dict],
 			edges: List[tuple]
 	) -> Dict[int, int]:
-		try:
-			node_ids = [node['global_id'] for node in nodes]
-			# print(node_ids, edges)
-			graph = self._create_graph(node_ids, edges)
-			weights = self._combined_weights(nodes)
-			if weights is None:
-				print("Weight calculation failed. Returning empty clusters.")
-				return {}
-
-			weighted_graph = self._add_weights_to_graph(graph, weights)
-			self.graph = weighted_graph
-
-			n_clusters, best_labels = self._calculate_n_clusters(nodes, weights)
-			if self.calculate_n_clusters == "ehuristic":
-				clusters = self._cluster_graph(weighted_graph, weights, n_clusters)
-			else:
-				clusters = {node: label for node, label in zip(graph.nodes(), best_labels)}
-			# clusters = self._split_clusters_by_token_length(clusters, nodes)
-
-			return clusters
-		except Exception as e:
-			print(f"Error in cluster: {e}")
+		node_ids = [node['global_id'] for node in nodes]
+		# print(node_ids, edges)
+		graph = self._create_graph(node_ids, edges)
+		weights = self._combined_weights(nodes)
+		if weights is None:
+			print("Weight calculation failed. Returning empty clusters.")
 			return {}
+
+		weighted_graph = self._add_weights_to_graph(graph, weights)
+		self.graph = weighted_graph
+
+		n_clusters, best_labels = self._calculate_n_clusters(nodes, weights)
+		if self.calculate_n_clusters == "ehuristic":
+			clusters = self._cluster_graph(weighted_graph, weights, n_clusters)
+		else:
+			clusters = {node: label for node, label in zip(graph.nodes(), best_labels)}
+		# clusters = self._split_clusters_by_token_length(clusters, nodes)
+
+		return clusters
 
 	def forward(
 			self,
@@ -1374,6 +1363,9 @@ class S2Chunker:
 					batch_clusters.append(np.full(len(page_layout_info["boxes"]), -1))
 					continue
 				nodes, edges, used = self.create_nodes_and_edges(page_layout_info, page_info)
+				if len(nodes) < 2:
+					batch_clusters.append(np.full(len(page_layout_info["boxes"]), -1))
+					continue
 				clusters = self.cluster(nodes, edges)
 				clusters = sorted(clusters.items(), key=lambda item: item[0])
 				clusters = [x[1] for x in clusters]

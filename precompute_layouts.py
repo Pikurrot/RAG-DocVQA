@@ -123,16 +123,16 @@ def main():
 		"layout_batch_size": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
+		"embed_weights": "/home/elopezc/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
 		"cluster_layouts": True,
-		"cluster_mode": "spatial+semantic", # spatial, spatial+semantic
+		"cluster_mode": "spatial", # spatial, spatial+semantic
 		"calculate_n_clusters": "best", # heuristic, best
-		"output_dir": "/data3fast/users/elopez/data",
+		"output_dir": "/home/elopezc/data",
 	}
 	extra_args = {
-		"visible_devices": "1,2,3,4,5",
+		"visible_devices": "0",
 		"data_size": 1.0,
 		"compute_stats": False,
 		"compute_stats_examples": False,
@@ -155,7 +155,7 @@ def main():
 	output_dir = config["output_dir"]
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
-	out_filename = os.path.join(output_dir, "images_layouts_dit_s2.npz")
+	out_filename = os.path.join(output_dir, "images_layouts_dit_s2_spa.npz")
 	np.savez_compressed(out_filename, **aggregated_results)
 	print(f"Merged layout file saved to {out_filename}")
 

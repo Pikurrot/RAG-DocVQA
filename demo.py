@@ -226,7 +226,7 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"embed_model": "BGE",
-		"layout_model": "YOLO", # YOLO, DIT
+		"layout_model": "DIT", # YOLO, DIT
 		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
@@ -238,7 +238,7 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
-		"layout_model_weights": "juliozhao/DocLayout-YOLO-DocStructBench",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
 		"use_precomputed_layouts": False,
 		"layout_embedding_scale": 1.0,

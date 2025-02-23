@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import gc
 import logging
+import warnings
 import networkx as nx
 from sklearn.cluster import SpectralClustering
 from sklearn.metrics.pairwise import cosine_similarity
@@ -23,6 +24,11 @@ from abc import ABC, abstractmethod
 from src.utils import containment_ratio, non_maximum_suppression
 from src._model_utils import mean_pooling
 
+warnings.filterwarnings(
+    "ignore", 
+    message=".*not valid for `BeitImageProcessor.preprocess`.*", 
+    category=UserWarning
+)
 logging.getLogger("doclayout_yolo").setLevel(logging.WARNING)
 
 class CustomT5Config(T5Config):
@@ -1253,7 +1259,7 @@ class S2Chunker:
 
 		best_k = min_k
 		best_score = -1
-		best_labels = None
+		best_labels = np.full(len(nodes), -1)
 		# Try different k values and choose the one with the highest silhouette score
 		upper_bound = min(max_k, len(nodes) - 1) # k < n_samples or error
 		for k in range(min_k, upper_bound + 1):
@@ -1340,10 +1346,10 @@ class S2Chunker:
 		self.graph = weighted_graph
 
 		n_clusters, best_labels = self._calculate_n_clusters(nodes, weights)
-		if self.calculate_n_clusters == "ehuristic":
+		if self.calculate_n_clusters == "heuristic":
 			clusters = self._cluster_graph(weighted_graph, weights, n_clusters)
 		else:
-			clusters = {node: label for node, label in zip(graph.nodes(), best_labels)}
+			clusters = {node: label for node, label in zip(weighted_graph.nodes(), best_labels)}
 		# clusters = self._split_clusters_by_token_length(clusters, nodes)
 
 		return clusters

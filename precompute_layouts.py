@@ -123,16 +123,16 @@ def main():
 		"layout_batch_size": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
-		"embed_weights": "/home/elopezc/models/bge-finetuned-2/checkpoint-820",
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
 		"cluster_layouts": True,
 		"cluster_mode": "spatial", # spatial, spatial+semantic
 		"calculate_n_clusters": "best", # heuristic, best
-		"output_dir": "/home/elopezc/data",
+		"output_dir": "/data3fast/users/elopez/data",
 	}
 	extra_args = {
-		"visible_devices": "0",
+		"visible_devices": "0,1,2,3,4",
 		"data_size": 1.0,
 		"compute_stats": False,
 		"compute_stats_examples": False,

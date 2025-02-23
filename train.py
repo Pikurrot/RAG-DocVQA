@@ -161,6 +161,8 @@ if __name__ == "__main__":
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
 		"use_precomputed_layouts": True,
+		"precomputed_layouts_path": "/data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		"cluster_layouts": True,
 		"train_layout": False, # Not implemented
 		"train_embedder": False, # Not implemented
 		"train_language_backbone": True,
@@ -203,8 +205,8 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	train_dataset = build_dataset(config, split="train", size=config["train_size"], use_precomputed_layouts=config["use_precomputed_layouts"])
-	val_dataset   = build_dataset(config, split="val", size=config["val_size"], use_precomputed_layouts=config["use_precomputed_layouts"])
+	train_dataset = build_dataset(config, split="train", size=config["train_size"])
+	val_dataset   = build_dataset(config, split="val", size=config["val_size"])
 	train_data_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True, collate_fn=mpdocvqa_collate_fn)
 	val_data_loader   = DataLoader(val_dataset, batch_size=config["batch_size_eval"], shuffle=False, collate_fn=mpdocvqa_collate_fn)
 

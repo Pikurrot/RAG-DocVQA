@@ -1,14 +1,12 @@
 model:
   model: RAGVT5
-  embed_model: BGE # BGE, VT5, BGE-M3, BGE-reranker
-  layout_model: YOLO
   add_sep_token: False
-  model_weights: /data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt
+  # model_weights: /data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt
 
 data:
   dataset: MP-DocVQA
-  page_retrieval: [Oracle, Concat, AnyConf]
-  batch_size: [50, 40, 32]
+  page_retrieval: [Concat, AnyConf]
+  batch_size: [40, 32]
   layout_batch_size: 8
 
 retrieval:
@@ -17,19 +15,25 @@ retrieval:
   chunk_size_tol: 0.2
   overlap: 10
   include_surroundings: 0
+  embed_model: BGE # BGE, VT5, BGE-M3, BGE-reranker
   embed_weights: /data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820
   
 layout_model:
-  layout_model_weights: juliozhao/DocLayout-YOLO-DocStructBench
+  layout_model: DIT # DIT, YOLO
+  layout_model_weights: cmarkea/dit-base-layout-detection
   use_layout_labels: False
   use_precomputed_layouts: True
-  layout_embedding_scale: 1.0
+  precomputed_layouts_path: /data3fast/users/elopez/data/images_layouts_dit_s2_spa_sem.npz
+  layout_embedding_scale: 10.0
   layout_loss_weight: 1.0
+  cluster_layouts: True
+  cluster_mode: spatial # spatial, spatial+semantic
+  calculate_n_clusters: best # heuristic, best
 
 runtime:
-  visible_devices: [1, 2, 3]
-  save_folder: 10-yolo_layout
-  save_name_append: yolo_no_labels
+  visible_devices: [3, 4]
+  save_folder: 11-s2_chunking
+  save_name_append: s2_spa_sem
   val_size: 1.0
   log_wandb: True
   log_media_interval: 10

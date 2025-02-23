@@ -410,7 +410,7 @@ if __name__ == "__main__":
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"layout_model": "YOLO", # YOLO, DIT
 		"dataset": "MP-DocVQA",
-		"page_retrieval": "Oracle", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 8,
@@ -421,11 +421,13 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
-		"layout_model_weights": "juliozhao/DocLayout-YOLO-DocStructBench",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": False,
 		"use_precomputed_layouts": True,
-		"layout_embedding_scale": 1.0,
+		"precomputed_layouts_path": "/data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		"layout_embedding_scale": 10.0,
 		"layout_loss_weight": 1.0,
+		"cluster_layouts": True,
 	}
 	extra_args = {
 		"visible_devices": "1",

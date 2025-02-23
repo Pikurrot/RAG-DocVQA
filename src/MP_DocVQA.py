@@ -2,7 +2,7 @@ import os
 import random
 from PIL import Image
 import numpy as np
-from typing import Literal, Any, List, Tuple, Dict
+from typing import Any, List, Tuple, Dict
 from torch.utils.data import Dataset
 from time import time
 
@@ -37,8 +37,7 @@ class MPDocVQA(Dataset):
 
 		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
 		if self.use_precomputed_layouts:
-			layouts_dir = config.get("layouts_dir", None)
-			layouts_file = os.path.join(layouts_dir, f"images_layouts_{config['layout_model'].lower()}.npz")
+			layouts_file = config["precomputed_layouts_path"]
 			self.layout_info = np.load(layouts_file, allow_pickle=True)
 
 	def __len__(self):

@@ -837,6 +837,7 @@ class Chunker(StatComponent):
 		layout_map = get_layout_model_map(config)
 		layout_map = {v: k for k, v in layout_map.items()}
 		self.default_layout_label = layout_map["text"]
+		self.cluster_layouts = config["cluster_layouts"]
 		if self.compute_stats:
 			self.stats = {
 				"chunk_size_dist": Counter(),
@@ -873,12 +874,14 @@ class Chunker(StatComponent):
 		question_id = kwargs.get("question_id", None)
 
 		# Extract layout_boxes and layout_labels from layout_info
+		layout_boxes = None
+		layout_labels = None
+		layout_clusters = None
 		if layout_info != [[]]:
 			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes, 4)
 			layout_labels = [[layout_info[b][p]["labels"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
-		else:
-			layout_boxes = None
-			layout_labels = None
+			if "clusters" in layout_info[0][0].keys() and self.cluster_layouts:
+				layout_clusters = [[layout_info[b][p]["clusters"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
 
 		layout_labels_chunks = [] # (bs, n_chunks)
 		page_indices = [] # (bs, n_chunks)
@@ -886,7 +889,15 @@ class Chunker(StatComponent):
 		words_boxes_chunks = [] # (bs, n_chunks, n_words, 4)
 		words_layout_labels_pages = [] # (bs, n_pages, n_words)
 
-		def make_chunks(_words, _boxes, _p, words_lst, boxes_lst, p_lst) -> int:
+		def make_chunks(
+				_words: List[str],
+				_boxes: List[list],
+				_p: int,
+				words_lst: list, # (n_chunks, n_words)
+				boxes_lst: list, # (n_chunks, n_words, 4)
+				p_lst: list # (n_chunks,)
+		) -> int:
+			
 			prev_chunk_size = 0
 			n_chunks = 0
 			for i in range(0, len(_words), self.chunk_size - self.overlap):
@@ -894,10 +905,11 @@ class Chunker(StatComponent):
 				chunk_boxes = _boxes[i:i + self.chunk_size]
 				this_chunk_size = len(chunk_words)
 				if (
-						i > 0 and 
-						_p == p_lst[-1] and 
+						i > 0 and # not first chunk
+						_p == p_lst[-1] and # same page
 						prev_chunk_size + (this_chunk_size - self.overlap) <= self.chunk_size * (1+self.chunk_size_tol)
-				): # if previous+this chunk in same page/layout is small, merge them
+						# if previous+this chunk in same page/layout is small, merge them
+				):
 					this_chunk_size = prev_chunk_size + this_chunk_size - self.overlap
 					words_lst[-1].extend(chunk_words[self.overlap:])
 					boxes_lst[-1].extend(chunk_boxes[self.overlap:])
@@ -917,12 +929,14 @@ class Chunker(StatComponent):
 		
 
 		for b, (batch_words, batch_boxes) in enumerate(zip(words, boxes)): # (n_pages, n_words), (n_pages, n_words, 4)
+			batch_layout_boxes = None
+			batch_layout_labels = None
+			batch_layout_clusters = None
 			if layout_boxes:
 				batch_layout_boxes = layout_boxes[b]
 				batch_layout_labels = layout_labels[b]
-			else:
-				batch_layout_boxes = None
-				batch_layout_labels = None
+				if layout_clusters:
+					batch_layout_clusters = layout_clusters[b]
 			batch_layout_labels_chunks = [] # (n_chunks,)
 			batch_page_indices = [] # (n_chunks,)
 			batch_words_text_chunks = [] # (n_chunks, n_words)
@@ -962,15 +976,22 @@ class Chunker(StatComponent):
 					self.stat_add_example("n_chunks_per_page_dist", page_n_chunks, f"{question_id[b]}_p{p}")
 				else:
 					# Else, if layout, make chunks inside the layout boxes
-					page_layout_boxes = batch_layout_boxes[p]
-					page_layout_labels = batch_layout_labels[p]
+					page_layout_boxes = batch_layout_boxes[p] # (n_layouts, 4)
+					page_layout_labels = batch_layout_labels[p] # (n_layouts,)
+					if batch_layout_clusters:
+						page_layout_clusters = batch_layout_clusters[p].tolist() # (n_layouts,)
+					else:
+						page_layout_clusters = None
 					layout_words_text = [] # (n_chunks, n_words)
 					layout_words_boxes = [] # (n_chunks, n_words, 4)
-					layout_indices = [] # (n_chunks,)
+					layout_indices = [] # (n_chunks,) Not used, just for consistency
 					page_n_chunks = 0
 					page_words_layout_labels = [self.default_layout_label] * len(page_words) # (n_words,)
+					# Find words inside the layout box
+					layout_words_inside = [] # (n_layouts, n_words)
+					layout_boxes_inside = [] # (n_layouts, n_words, 4)
+					layout_labels_inside = page_layout_labels.copy() # (n_layouts,)
 					for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
-						# Find words inside the layout box
 						words_inside = []
 						boxes_inside = []
 						for i, (word, box) in enumerate(zip(page_words, page_boxes)):
@@ -979,7 +1000,43 @@ class Chunker(StatComponent):
 								words_inside.append(word)
 								boxes_inside.append(box)
 								page_words_layout_labels[i] = layout_label
-						# Split the words inside the layout box into chunks
+						layout_words_inside.append(words_inside)
+						layout_boxes_inside.append(boxes_inside)
+					# If clusters provided, concatenate words and boxes of layout clusters
+					if page_layout_clusters:
+						cluster_words_inside = [] # (n_clusters, n_words)
+						cluster_boxes_inside = [] # (n_clusters, n_words, 4)
+						cluster_layout_labels = [] # (n_clusters,)
+						cluster2idx = {}
+						c = 0
+						# group by cluster
+						for lb, (words_inside, boxes_inside, layout_label, cluster) in enumerate(
+							zip(layout_words_inside, layout_boxes_inside, page_layout_labels, page_layout_clusters)
+						):
+							if cluster == -1:  # treat each -1 as a separate cluster
+								cluster_words_inside.append(words_inside)
+								cluster_boxes_inside.append(boxes_inside)
+								cluster_layout_labels.append(Counter([layout_label]))
+								c += 1
+							else:
+								if cluster not in cluster2idx:
+									cluster2idx[cluster] = c
+									cluster_words_inside.append(words_inside)
+									cluster_boxes_inside.append(boxes_inside)
+									cluster_layout_labels.append(Counter([layout_label]))
+									c += 1
+								else:
+									idx = cluster2idx[cluster]
+									cluster_words_inside[idx].extend(words_inside)
+									cluster_boxes_inside[idx].extend(boxes_inside)
+									cluster_layout_labels[idx][layout_label] += 1
+						layout_words_inside = cluster_words_inside # (n_clusters, n_words)
+						layout_boxes_inside = cluster_boxes_inside # (n_clusters, n_words, 4)
+						layout_labels_inside = [cluster_labels.most_common(1)[0][0] for cluster_labels in cluster_layout_labels] # (n_clusters,)
+					# Split the words inside the layout box into chunks
+					for lb, (words_inside, boxes_inside, layout_label) in enumerate(
+						zip(layout_words_inside, layout_boxes_inside, layout_labels_inside)
+					):
 						layout_n_chunks = make_chunks(
 							words_inside, boxes_inside, lb,
 							layout_words_text, layout_words_boxes, layout_indices

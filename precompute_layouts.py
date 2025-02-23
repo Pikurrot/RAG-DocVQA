@@ -74,11 +74,7 @@ def precompute_layouts_aggregated(dataloader, layout_model, clusterer, config):
 		keys = [os.path.splitext(os.path.basename(p))[0] for p in image_paths]
 		layout_info, _ = layout_model(images)
 		if config["cluster_layouts"]:
-			try:
-				batch_clusters = clusterer(layout_info, pages_info)
-			except Exception as e:
-				print(image_paths)
-				raise e
+			batch_clusters = clusterer(layout_info, pages_info)
 		else:
 			batch_clusters = [np.full(len(page_layout_info), -1) for page_layout_info in layout_info]
 		for key, elem, clusters in zip(keys, layout_info, batch_clusters):
@@ -127,7 +123,7 @@ def main():
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_layout_labels": True,
 		"cluster_layouts": True,
-		"cluster_mode": "spatial", # spatial, spatial+semantic
+		"cluster_mode": "spatial+semantic", # spatial, spatial+semantic
 		"calculate_n_clusters": "best", # heuristic, best
 		"output_dir": "/data3fast/users/elopez/data",
 	}
@@ -155,7 +151,7 @@ def main():
 	output_dir = config["output_dir"]
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
-	out_filename = os.path.join(output_dir, "images_layouts_dit_s2_spa.npz")
+	out_filename = os.path.join(output_dir, "images_layouts_dit_s2_spa_sem.npz")
 	np.savez_compressed(out_filename, **aggregated_results)
 	print(f"Merged layout file saved to {out_filename}")
 

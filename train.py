@@ -146,8 +146,9 @@ if __name__ == "__main__":
     # Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "MP-DocVQA",
 		"embed_model": "BGE",
+		"layout_model": "DIT", # YOLO, DIT
+		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
 		"batch_size": 4,
@@ -173,9 +174,9 @@ if __name__ == "__main__":
 		"layout_loss_weight": 1.0,
 	}
 	extra_args = {
-		"visible_devices": "2",
-		"save_folder": "9-train_generator_with_layout",
-		"save_name_append": "train_generator_layout_loss_scale10",
+		"visible_devices": "5",
+		"save_folder": "11-s2_chunking",
+		"save_name_append": "train_s2_spa",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,
@@ -211,7 +212,7 @@ if __name__ == "__main__":
 	val_data_loader   = DataLoader(val_dataset, batch_size=config["batch_size_eval"], shuffle=False, collate_fn=mpdocvqa_collate_fn)
 
 	print("Training...")
-	evaluator = Evaluator(case_sensitive=False)
+	evaluator = Evaluator(config, case_sensitive=False)
 	logger_train = Logger(config, experiment_name)
 	log_media_interval = (len(val_data_loader) // config["log_media_interval"]) if config["save_continuously"] else 1
 	logger_eval = LoggerEval(config, experiment_name, log_media_interval)

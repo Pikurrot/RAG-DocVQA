@@ -408,16 +408,16 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"layout_model": "YOLO", # YOLO, DIT
+		"layout_model": "DIT", # YOLO, DIT
 		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 24, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 8,
-		"chunk_num": 10,
-		"chunk_size": 60,
+		"chunk_num": 20,
+		"chunk_size": 90,
 		"chunk_size_tol": 0.2,
-		"overlap": 10,
+		"overlap": 50,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
@@ -430,9 +430,9 @@ if __name__ == "__main__":
 		"cluster_layouts": True,
 	}
 	extra_args = {
-		"visible_devices": "1",
-		"save_folder": "10-yolo_layout",
-		"save_name_append": "yolo_no_labels",
+		"visible_devices": "4",
+		"save_folder": "11-s2_chunking",
+		"save_name_append": "s2_spa_cn20_ov50_cs90",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

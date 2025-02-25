@@ -987,6 +987,20 @@ class Chunker(StatComponent):
 					layout_indices = [] # (n_chunks,) Not used, just for consistency
 					page_n_chunks = 0
 					page_words_layout_labels = [self.default_layout_label] * len(page_words) # (n_words,)
+					# Sort layout boxes left-right and top-bottom
+					if batch_layout_boxes is not None and len(batch_layout_boxes[p]) > 0:
+						if batch_layout_clusters:
+							sorted_tuples = sorted(
+								zip(page_layout_boxes, page_layout_labels, page_layout_clusters),
+								key=lambda x: (x[0][0], x[0][1])  # sort by xmin, then by ymin
+							)
+							page_layout_boxes, page_layout_labels, page_layout_clusters = map(list, zip(*sorted_tuples))
+						else:
+							sorted_tuples = sorted(
+								zip(page_layout_boxes, page_layout_labels),
+								key=lambda x: (x[0][0], x[0][1])
+							)
+							page_layout_boxes, page_layout_labels = map(list, zip(*sorted_tuples))			
 					# Find words inside the layout box
 					layout_words_inside = [] # (n_layouts, n_words)
 					layout_boxes_inside = [] # (n_layouts, n_words, 4)

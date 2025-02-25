@@ -23,7 +23,7 @@ layout_model:
   layout_model_weights: cmarkea/dit-base-layout-detection
   use_layout_labels: False
   use_precomputed_layouts: True
-  precomputed_layouts_path: /data3fast/users/elopez/data/images_layouts_dit_s2_spa_sem.npz
+  precomputed_layouts_path: /data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz
   layout_embedding_scale: 10.0
   layout_loss_weight: 1.0
   cluster_layouts: True
@@ -33,7 +33,7 @@ layout_model:
 runtime:
   visible_devices: [3, 4]
   save_folder: 11-s2_chunking
-  save_name_append: s2_spa_sem
+  save_name_append: s2_spa_sorted
   val_size: 1.0
   log_wandb: True
   log_media_interval: 10

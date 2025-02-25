@@ -154,7 +154,7 @@ def log_wandb(
 				}
 			}
 	}
-	if config["layout_model_weights"] and config["page_retrieval"] != "oracle" and config["compute_stats"]:
+	if config.get("layout_model_weights") and config["page_retrieval"] != "oracle" and config["compute_stats"]:
 		log_data.update({
 			"Val/Layout labels count": {
 				"values": [
@@ -414,25 +414,25 @@ if __name__ == "__main__":
 		"add_sep_token": False,
 		"batch_size": 24, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"layout_batch_size": 8,
-		"chunk_num": 20,
-		"chunk_size": 90,
+		"chunk_num": 10,
+		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
-		"overlap": 50,
+		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
-		"layout_model_weights": "cmarkea/dit-base-layout-detection",
+		"layout_model_weights": None,#"cmarkea/dit-base-layout-detection",
 		"use_layout_labels": False,
-		"use_precomputed_layouts": True,
+		"use_precomputed_layouts": False,
 		"precomputed_layouts_path": "/data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz",
 		"layout_embedding_scale": 10.0,
 		"layout_loss_weight": 1.0,
 		"cluster_layouts": True,
 	}
 	extra_args = {
-		"visible_devices": "4",
+		"visible_devices": "1",
 		"save_folder": "11-s2_chunking",
-		"save_name_append": "s2_spa_cn20_ov50_cs90",
+		"save_name_append": "s2_spa_sorted",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

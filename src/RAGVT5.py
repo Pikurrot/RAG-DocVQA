@@ -154,7 +154,6 @@ class RAGVT5(torch.nn.Module):
 				layout_info,
 				question_id=batch["question_id"]
 		)
-		text_chunks, _ = Chunker.compact_chunks(words_text_chunks, words_boxes_chunks)
 
 		# Prepend layout labels before each chunk if needed
 		if self.use_layout_labels == "Text":
@@ -164,6 +163,9 @@ class RAGVT5(torch.nn.Module):
 					boxes_prepend = [0, 0, 0, 0]
 					words_text_chunks[b][i] = [text_prepend] + words_text_chunks[b][i]
 					words_boxes_chunks[b][i] = [boxes_prepend] + words_boxes_chunks[b][i]
+
+		# Compact chunks
+		text_chunks, _ = Chunker.compact_chunks(words_text_chunks, words_boxes_chunks)
 
 		# Get text and question embeddings
 		with (nullcontext() if self.train_mode and self.train_embedder else torch.no_grad()):

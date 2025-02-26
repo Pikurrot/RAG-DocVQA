@@ -246,6 +246,14 @@ def get_layout_model_map(config: dict) -> dict:
     else:
         raise ValueError(f"Invalid layout model choice: {model_choice}")
 
+def get_raw_layout_model_map(config: dict) -> dict:
+	model_choice = config.get("layout_model")
+	if model_choice == "YOLO":
+		return LayoutModelYOLO._layout_map_raw
+	elif model_choice == "DIT":
+		return LayoutModelDIT._layout_map_raw
+	else:
+		raise ValueError(f"Invalid layout model choice: {model_choice}")
 
 class LayoutModelBase(torch.nn.Module, StatComponent, ABC):
 	@property
@@ -308,6 +316,7 @@ class LayoutModelDIT(LayoutModelBase):
 		self.cache_dir = config["cache_dir"]
 		self.use_layout_labels = config["use_layout_labels"]
 		self.layout_bs = config["layout_batch_size"]
+		self.default_layout_label = {val: key for key, val in self.layout_map.items()}["text"]
 
 		# Load layout model
 		self.processor = AutoImageProcessor.from_pretrained(self.model_path, cache_dir=self.cache_dir)
@@ -493,7 +502,7 @@ class LayoutModelDIT(LayoutModelBase):
 						label = 0
 					labels_.append(label)
 			else:
-				labels_.extend([10]*len(bbx))
+				labels_.extend([self.default_layout_label]*len(bbx))
 			bbox_pred.append(dict(boxes=boxes_, labels=labels_))
 
 		# Filter bounding boxes

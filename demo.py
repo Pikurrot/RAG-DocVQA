@@ -3,13 +3,14 @@ from torch.utils.data import DataLoader
 from src.build_utils import build_model, build_dataset
 from src.utils import load_config
 from src.MP_DocVQA import mpdocvqa_collate_fn
-from src._modules import get_layout_model_map
+from src._modules import get_layout_model_map, get_raw_layout_model_map
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import argparse
 import os
 
 color_map = {
+	-1: 'black',
 	0: 'red',
 	1: 'green',
 	2: 'blue',
@@ -25,6 +26,7 @@ color_map = {
 }
 
 color2rgb = {
+	"black": (0, 0, 0),
 	"red": (255, 0, 0),
 	"green": (0, 255, 0),
 	"blue": (0, 0, 255),
@@ -104,6 +106,7 @@ def process(batch):
 	for i, layout_info in enumerate(retrieved_layout_info):
 		boxes = layout_info.get("boxes", [])
 		labels = layout_info.get("labels", [])
+		clusters = layout_info.get("clusters", [-1]*len(boxes))
 		for j, box in enumerate(boxes):
 			resized_box = [
 				box[0] * original_images[i].width,
@@ -113,9 +116,9 @@ def process(batch):
 			]
 			img = images_with_boxes[i]
 			draw = ImageDraw.Draw(img)
-			draw.rectangle(resized_box, outline=color_map[labels[j]], width=3)
+			draw.rectangle(resized_box, outline=color_map[clusters[j]], width=3)
 			font = ImageFont.truetype("arial.ttf", 40)  # Specify the font and size
-			draw.text((resized_box[0], resized_box[1]-40), layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+			draw.text((resized_box[0], resized_box[1]-40), f"{layout_map[labels[j]]}, {clusters[j]}", fill=color_map[clusters[j]], font=font)
 	
 	# Draw layout segments and raw boxes on original images
 	retrieved_layout_segments = retrieval["steps"]["layout_segments"][0]  # List of 2d arrays
@@ -138,7 +141,7 @@ def process(batch):
 		for j, box in enumerate(boxes):
 			draw.rectangle(box, outline=color_map[labels[j]], width=3)
 			font = ImageFont.truetype("arial.ttf", 40)
-			draw.text((box[0], box[1]-40), layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+			draw.text((box[0], box[1]-40), raw_layout_map[labels[j]], fill=color_map[labels[j]], font=font)
 		images_with_segments_and_boxes[i] = blended
 
 	# Model outputs
@@ -237,12 +240,14 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
+		"embed_weights": "/home/elopezc/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": "Default",
+		"use_layout_labels": "Text",
 		"use_precomputed_layouts": False,
-		"layout_embedding_scale": 1.0,
+		"precomputed_layouts_path": "/home/elopezc/data/images_layouts_dit_s2_spa.npz",
+		"layout_embedding_scale": 10.0,
 		"layout_loss_weight": 1.0,
+		"cluster_layouts": True,
 	}
 	extra_args = {
 		"visible_devices": "0",
@@ -265,6 +270,7 @@ if __name__ == "__main__":
 	config = load_config(args)
 	config["page_retrieval"] = config["page_retrieval"].lower()
 	layout_map = get_layout_model_map(config)
+	raw_layout_map = get_raw_layout_model_map(config)
 	print("Building model...")
 	model = build_model(config)
 	print("Building dataset...")

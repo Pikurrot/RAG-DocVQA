@@ -226,9 +226,9 @@ def concatenate_patches(
 
 def flatten(
 		lst: List[list],
-		add_sep_token: bool = True
+		add_sep_token: str = None
 ) -> list:
-	if add_sep_token:
+	if add_sep_token is not None:
 		# Add a separator token between the sublists
 		flat_list = []
 		for i, sublist in enumerate(lst):
@@ -236,7 +236,7 @@ def flatten(
 				continue
 			if i > 0:
 				if isinstance(sublist[0], str): # for words
-					flat_list.append("<sep>")
+					flat_list.append(add_sep_token)
 				elif isinstance(sublist[0], list): # for boxes
 					flat_list.append([0, 0, 0, 0])
 				elif isinstance(sublist[0], int): # for layout labels

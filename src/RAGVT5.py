@@ -1,6 +1,6 @@
 import torch
 from src.VT5 import VT5ForConditionalGeneration
-from src._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel
+from src._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel, get_layout_model_map
 from src.utils import flatten, concatenate_patches
 from typing import Any
 import numpy as np
@@ -15,6 +15,8 @@ class RAGVT5(torch.nn.Module):
 		self.embed_path = config.get("embed_weights", None)
 		self.layout_bs = config.get("layout_batch_size", 1)
 		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
+		self.use_layout_labels = config.get("use_layout_labels", "Default")
+		self.layout_map = get_layout_model_map(config)
 		self.page_retrieval = config.get("page_retrieval")
 		if self.use_precomputed_layouts or self.page_retrieval == "oracle":
 			self.layout_model_weights = None
@@ -154,6 +156,15 @@ class RAGVT5(torch.nn.Module):
 		)
 		text_chunks, _ = Chunker.compact_chunks(words_text_chunks, words_boxes_chunks)
 
+		# Prepend layout labels before each chunk if needed
+		if self.use_layout_labels == "Text":
+			for b in range(bs):
+				for i, layout_label in enumerate(layout_labels_chunks[b]):
+					text_prepend = self.layout_map[layout_label]+": "
+					boxes_prepend = [0, 0, 0, 0]
+					words_text_chunks[b][i] = [text_prepend] + words_text_chunks[b][i]
+					words_boxes_chunks[b][i] = [boxes_prepend] + words_boxes_chunks[b][i]
+
 		# Get text and question embeddings
 		with (nullcontext() if self.train_mode and self.train_embedder else torch.no_grad()):
 			text_embeddings = self.embedder.embed_multi(text_chunks) # (bs, n_chunks, hidden_size)
@@ -247,12 +258,16 @@ class RAGVT5(torch.nn.Module):
 		# Generate
 		start_time = time()
 		new_batch = {}
+		if self.use_layout_labels == "Text":
+			add_sep_token = "."
+		else:
+			add_sep_token = "<sep>" if self.add_sep_token else None
 		if self.page_retrieval in ["oracle", "concat"]:
 			# Concatenate all the top k chunks (in case of oracle, just 1 chunk, the whole page)
 			new_batch["questions"] = batch["questions"].copy() # (bs,)
-			new_batch["words"] = [flatten(b, self.add_sep_token) for b in top_k_words_text]  # (bs, k * n_words)
-			new_batch["boxes"] = [flatten(b, self.add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
-			new_batch["layout_labels"] = [flatten(b, self.add_sep_token) for b in top_k_words_layout_labels]  # (bs, k * n_words)
+			new_batch["words"] = [flatten(b, add_sep_token) for b in top_k_words_text]  # (bs, k * n_words)
+			new_batch["boxes"] = [flatten(b, add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
+			new_batch["layout_labels"] = [flatten(b, add_sep_token) for b in top_k_words_layout_labels]  # (bs, k * n_words)
 			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			with (nullcontext() if self.train_mode and self.train_generator else torch.no_grad()):

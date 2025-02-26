@@ -481,7 +481,7 @@ class LayoutModelDIT(LayoutModelBase):
 			if mm.sum() > 0:
 				bbx = self._detect_bboxes(mm.numpy())
 				boxes_.extend(bbx)
-			if self.use_layout_labels:
+			if self.use_layout_labels != "Default":
 				# Majority voting excluding class 0
 				for box in boxes_:
 					xmin, ymin, xmax, ymax = box

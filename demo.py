@@ -239,7 +239,7 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		"embed_weights": "/home/elopezc/data/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": True,
+		"use_layout_labels": "Default",
 		"use_precomputed_layouts": False,
 		"layout_embedding_scale": 1.0,
 		"layout_loss_weight": 1.0,

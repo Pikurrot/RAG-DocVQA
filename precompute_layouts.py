@@ -121,7 +121,7 @@ def main():
 		"chunk_size_tol": 0.2,
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": True,
+		"use_layout_labels": "Embed",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial+semantic", # spatial, spatial+semantic
 		"calculate_n_clusters": "best", # heuristic, best

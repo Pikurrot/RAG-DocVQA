@@ -160,7 +160,7 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": True,
+		"use_layout_labels": "Embed",
 		"use_precomputed_layouts": True,
 		"precomputed_layouts_path": "/data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
@@ -175,8 +175,8 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "5",
-		"save_folder": "11-s2_chunking",
-		"save_name_append": "train_s2_spa",
+		"save_folder": "12-s2_chunking_sorted",
+		"save_name_append": "train_s2_spa_sorted",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,

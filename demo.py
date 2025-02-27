@@ -229,7 +229,6 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"embed_model": "BGE",
-		"layout_model": "DIT", # YOLO, DIT
 		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
@@ -241,13 +240,7 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		"embed_weights": "/home/elopezc/models/bge-finetuned-2/checkpoint-820",
-		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": "Text",
-		"use_precomputed_layouts": False,
-		"precomputed_layouts_path": "/home/elopezc/data/images_layouts_dit_s2_spa.npz",
-		"layout_embedding_scale": 10.0,
-		"layout_loss_weight": 1.0,
-		"cluster_layouts": True,
+		"reorder_chunks": True
 	}
 	extra_args = {
 		"visible_devices": "0",

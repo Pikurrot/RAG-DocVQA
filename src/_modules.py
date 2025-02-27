@@ -244,7 +244,7 @@ def get_layout_model_map(config: dict) -> dict:
     elif model_choice == "DIT":
         return LayoutModelDIT.get_layout_map()
     else:
-        raise ValueError(f"Invalid layout model choice: {model_choice}")
+        return {1: "text"}
 
 def get_raw_layout_model_map(config: dict) -> dict:
 	model_choice = config.get("layout_model")
@@ -253,7 +253,7 @@ def get_raw_layout_model_map(config: dict) -> dict:
 	elif model_choice == "DIT":
 		return LayoutModelDIT._layout_map_raw
 	else:
-		raise ValueError(f"Invalid layout model choice: {model_choice}")
+		return {1: "text"}
 
 class LayoutModelBase(torch.nn.Module, StatComponent, ABC):
 	@property
@@ -312,10 +312,10 @@ class LayoutModelDIT(LayoutModelBase):
 
 		# Load config
 		self.model_path = config.get("layout_model_weights", "cmarkea/dit-base-layout-detection")
-		self.device = config["device"]
-		self.cache_dir = config["cache_dir"]
-		self.use_layout_labels = config["use_layout_labels"]
-		self.layout_bs = config["layout_batch_size"]
+		self.device = config.get("device", "cuda")
+		self.cache_dir = config.get("cache_dir", None)
+		self.use_layout_labels = config.get("use_layout_labels", "Default")
+		self.layout_bs = config.get("layout_batch_size", 1)
 		self.default_layout_label = {val: key for key, val in self.layout_map.items()}["text"]
 
 		# Load layout model
@@ -640,10 +640,10 @@ class LayoutModelYOLO(LayoutModelBase):
 
 		# Load config
 		repo_id = config.get("layout_model_weights", "juliozhao/DocLayout-YOLO-DocStructBench")
-		self.device = config["device"]
-		self.cache_dir = config["cache_dir"]
-		self.use_layout_labels = config["use_layout_labels"]
-		self.layout_bs = config["layout_batch_size"]
+		self.device = config.get("device", "cuda")
+		self.cache_dir = config.get("cache_dir", None)
+		self.use_layout_labels = config.get("use_layout_labels", "Default")
+		self.layout_bs = config.get("layout_batch_size", 1)
 
 		# Load layout model
 		model_path = hf_hub_download(
@@ -838,15 +838,14 @@ class Chunker(StatComponent):
 	def __init__(self, config: dict):
 		# Load config
 		super(Chunker, self).__init__(config)
-		self.chunk_size = config["chunk_size"]
-		self.chunk_size_tol = config["chunk_size_tol"]
-		self.overlap = config["overlap"]
-		self.include_surroundings = config["include_surroundings"]
-		self.page_retrieval = config["page_retrieval"]
+		self.chunk_size = config.get("chunk_size", 60)
+		self.chunk_size_tol = config.get("chunk_size_tol", 0.2)
+		self.overlap = config.get("overlap", 10)
+		self.page_retrieval = config.get("page_retrieval", "concat")
 		layout_map = get_layout_model_map(config)
 		layout_map = {v: k for k, v in layout_map.items()}
 		self.default_layout_label = layout_map["text"]
-		self.cluster_layouts = config["cluster_layouts"]
+		self.cluster_layouts = config.get("cluster_layouts", False)
 		if self.compute_stats:
 			self.stats = {
 				"chunk_size_dist": Counter(),
@@ -1198,8 +1197,8 @@ class S2Chunker:
 			embedder: Optional[Embedder]=None
 	):
 		self.config = config
-		self.cluster_mode = config["cluster_mode"]
-		self.calculate_n_clusters = config["calculate_n_clusters"]
+		self.cluster_mode = config.get("cluster_mode", "spatial+semantic")
+		self.calculate_n_clusters = config.get("calculate_n_clusters", "heuristic")
 		# self.max_token_length = config["chunk_size"] * (1+config["chunk_size_tol"])
 		self.graph = None
 		if self.cluster_mode == "spatial+semantic":
@@ -1428,9 +1427,9 @@ class S2Chunker:
 		n_clusters, best_labels = self._calculate_n_clusters(nodes, weights)
 		if self.calculate_n_clusters == "heuristic":
 			clusters = self._cluster_graph(weighted_graph, weights, n_clusters)
+			clusters = self._split_clusters_by_token_length(clusters, nodes)
 		else:
 			clusters = {node: label for node, label in zip(weighted_graph.nodes(), best_labels)}
-		# clusters = self._split_clusters_by_token_length(clusters, nodes)
 
 		return clusters
 
@@ -1473,8 +1472,8 @@ class Retriever(StatComponent):
 	def __init__(self, config: dict):
 		# Load config
 		super(Retriever, self).__init__(config)
-		self.k = config["chunk_num"]
-		self.include_surroundings = config["include_surroundings"]
+		self.k = config.get("chunk_num", 10)
+		self.include_surroundings = config.get("include_surroundings", 0)
 		self.layout_map = get_layout_model_map(config)
 		if self.compute_stats:
 			self.stats["layout_labels_topk_dist"] = {label: 0 for label in self.layout_map.values()}

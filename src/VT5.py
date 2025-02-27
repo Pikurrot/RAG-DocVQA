@@ -2,7 +2,7 @@ import numpy as np
 import random
 import torch
 import os
-from transformers import PreTrainedModel, T5Tokenizer
+from transformers import PreTrainedModel, T5Tokenizer, T5ForConditionalGeneration
 from src.LayoutT5 import LayoutT5ForConditionalGeneration
 from src._modules import SpatialEmbeddings, VisualEmbeddings, CustomT5Config, get_layout_model_map
 from src._model_utils import shift_tokens_right, get_generative_confidence
@@ -25,14 +25,17 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 
 		# Load components
 		self.tokenizer = T5Tokenizer.from_pretrained(config._name_or_path, ignore_mismatched_sizes=True)
-		self.language_backbone = LayoutT5ForConditionalGeneration(config)
+		if self.use_layout_labels != "Default":
+			self.language_backbone = LayoutT5ForConditionalGeneration(config)
+			self.layout_embedding = torch.nn.Embedding(
+				len(get_layout_model_map(config_dict).keys()) + 1,
+				self.language_backbone.model_dim
+			)
+			self.layout_embedding_scale = torch.nn.Parameter(torch.tensor(float(config_dict.get("layout_embedding_scale", 1.0))))
+		else:
+			self.language_backbone = T5ForConditionalGeneration(config)
 		self.spatial_embedding = SpatialEmbeddings(config)
 		self.visual_embedding = VisualEmbeddings(config)
-		self.layout_embedding = torch.nn.Embedding(
-			len(get_layout_model_map(config_dict).keys()) + 1,
-			self.language_backbone.model_dim
-		)
-		self.layout_embedding_scale = torch.nn.Parameter(torch.tensor(float(config_dict.get("layout_embedding_scale", 1.0))))
 
 		# Freeze embeddings for training
 		if not config_dict.get("train_language_backbone", False):
@@ -44,16 +47,17 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		if not config_dict.get("train_visual_embedding", False):
 			for param in self.visual_embedding.parameters():
 				param.requires_grad = False
-		if not config_dict.get("train_layout_embedding", False):
+		if not config_dict.get("train_layout_embedding", False) and self.use_layout_labels != "Default":
 			for param in self.layout_embedding.parameters():
 				param.requires_grad = False
 
 	def post_init(self):
 		"""Initialize weights after model is loaded"""
 		super().post_init()
-		with torch.no_grad():
-			torch.nn.init.xavier_normal_(self.language_backbone.layout_classifier.weight, gain=1.0)
-			torch.nn.init.zeros_(self.language_backbone.layout_classifier.bias)
+		if self.use_layout_labels != "Default":
+			with torch.no_grad():
+				torch.nn.init.xavier_normal_(self.language_backbone.layout_classifier.weight, gain=1.0)
+				torch.nn.init.zeros_(self.language_backbone.layout_classifier.bias)
 
 	@classmethod
 	def from_pretrained(cls, model_path: str, **kwargs):
@@ -73,7 +77,8 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.language_backbone.to(device)
 		self.spatial_embedding.to(device)
 		self.visual_embedding.to(device)
-		self.layout_embedding.to(device)
+		if self.use_layout_labels != "Default":
+			self.layout_embedding.to(device)
 
 	def prepare_inputs_for_vqa(
 			self,
@@ -216,12 +221,13 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 			)
 			decoder_inputs_embeds = self.language_backbone.shared(decoder_input_ids)
 			
+			kwags = {"layout_labels": tensor_layout_labels} if self.use_layout_labels != "Default" else {}
 			outputs = self.language_backbone(
 				inputs_embeds=input_embeds,
 				decoder_inputs_embeds=decoder_inputs_embeds,
 				attention_mask=attention_mask,
 				labels=labels,
-				layout_labels=tensor_layout_labels
+				**kwags
 			)
 			if return_pred_answer:
 				pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)

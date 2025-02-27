@@ -408,7 +408,6 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
-		"layout_model": "DIT", # YOLO, DIT
 		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
@@ -421,18 +420,11 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
-		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": "Text", # Default, Embed, Text
-		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz",
-		"layout_embedding_scale": 10.0,
-		"layout_loss_weight": 1.0,
-		"cluster_layouts": True,
 	}
 	extra_args = {
 		"visible_devices": "6",
-		"save_folder": "13-prepend_layout_label",
-		"save_name_append": "s2_spa",
+		"save_folder": "14-reorder_chunks",
+		"save_name_append": "",
 		"val_size": 1.0,
 		"log_wandb": False,
 		"log_media_interval": 10,
@@ -486,7 +478,7 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	dataset = build_dataset(config, split="val", size=config["val_size"], use_precomputed_layouts=config["use_precomputed_layouts"])
+	dataset = build_dataset(config, split="val", size=config["val_size"])
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model

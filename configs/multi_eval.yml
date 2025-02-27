@@ -5,12 +5,12 @@ model:
 
 data:
   dataset: MP-DocVQA
-  page_retrieval: [Concat]
-  batch_size: [40]
+  page_retrieval: [Concat, Maxconf, AnyConf]
+  batch_size: [40, 24, 24]
   layout_batch_size: 8
 
 retrieval:
-  chunk_num: 15
+  chunk_num: 10
   chunk_size: 60
   chunk_size_tol: 0.2
   overlap: 10
@@ -18,20 +18,20 @@ retrieval:
   embed_model: BGE # BGE, VT5, BGE-M3, BGE-reranker
   embed_weights: /data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820
   
-layout_model:
-  layout_model: DIT # DIT, YOLO
-  layout_model_weights: cmarkea/dit-base-layout-detection
-  use_layout_labels: Default # Default, Embed, Text
-  use_precomputed_layouts: True
-  precomputed_layouts_path: /data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz
-  layout_embedding_scale: 10.0
-  layout_loss_weight: 1.0
-  cluster_layouts: True
-  cluster_mode: spatial # spatial, spatial+semantic
-  calculate_n_clusters: best # heuristic, best
+# layout_model:
+#   layout_model: DIT # DIT, YOLO
+#   layout_model_weights: cmarkea/dit-base-layout-detection
+#   use_layout_labels: Text # Default, Embed, Text
+#   use_precomputed_layouts: True
+#   precomputed_layouts_path: /data3fast/users/elopez/data/images_layouts_dit_s2_spa.npz
+#   layout_embedding_scale: 10.0
+#   layout_loss_weight: 1.0
+#   cluster_layouts: True
+#   cluster_mode: spatial # spatial, spatial+semantic
+#   calculate_n_clusters: best # heuristic, best
 
 runtime:
-  visible_devices: [6]
+  visible_devices: [6, 7, 8]
   save_folder: 13-prepend_layout_label
   save_name_append: s2_spa
   val_size: 1.0

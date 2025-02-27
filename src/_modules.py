@@ -846,6 +846,8 @@ class Chunker(StatComponent):
 		layout_map = {v: k for k, v in layout_map.items()}
 		self.default_layout_label = layout_map["text"]
 		self.cluster_layouts = config.get("cluster_layouts", False)
+		self.reorder_chunks = config.get("reorder_chunks", True)
+
 		if self.compute_stats:
 			self.stats = {
 				"chunk_size_dist": Counter(),
@@ -1075,6 +1077,12 @@ class Chunker(StatComponent):
 					batch_n_chunks += page_n_chunks
 					self.stat_sum("n_chunks_per_page_dist", page_n_chunks)
 					self.stat_add_example("n_chunks_per_page_dist", page_n_chunks, f"{question_id[b]}_p{p}")
+
+			# Reorder chunks by page and top-left first
+			if self.reorder_chunks:
+				chunks = list(zip(batch_page_indices, batch_words_text_chunks, batch_words_box_chunks, batch_layout_labels_chunks))
+				chunks.sort(key=lambda x: (x[0], x[2][0][1], x[2][0][0])) # sort by page, then by y, then by x
+				batch_page_indices, batch_words_text_chunks, batch_words_box_chunks, batch_layout_labels_chunks = zip(*chunks)
 
 			layout_labels_chunks.append(batch_layout_labels_chunks)
 			page_indices.append(batch_page_indices)

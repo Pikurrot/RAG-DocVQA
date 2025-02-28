@@ -240,7 +240,11 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		"embed_weights": "/home/elopezc/models/bge-finetuned-2/checkpoint-820",
-		"reorder_chunks": True
+		"reorder_chunks": False,
+		"reranker_weights": "BAAI/bge-reranker-base",
+		"rerank_filter_tresh": 0.4,
+		"rerank_max_chunk_num": 5,
+		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
 		"visible_devices": "0",

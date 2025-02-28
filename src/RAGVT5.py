@@ -195,7 +195,7 @@ class RAGVT5(torch.nn.Module):
 			top_k_words_layout_labels, # (bs, k, n_words)
 			top_k_patches, # (bs, k, h, w, 3)
 			top_k_page_indices, # (bs, k)
-			similarities,
+			similarities, # (bs, k)
 		) =\
 			self.retriever.retrieve(
 				text_embeddings,
@@ -229,7 +229,8 @@ class RAGVT5(torch.nn.Module):
 					top_k_words_boxes,
 					top_k_words_layout_labels,
 					top_k_patches,
-					top_k_page_indices
+					top_k_page_indices,
+					similarities
 			)
 
 		# Prepare output

@@ -1149,7 +1149,7 @@ class BaseEmbedder(ABC):
 
 class BGEBiEncoderTemplate(ABC):
 	def get_embedding_dim(self):
-		return self.model.base_model.encoder.layer[-1].output.dense.out_features
+		return self.model[1].word_embedding_dimension
 	
 	def to(self, device):
 		self.model.to(device)

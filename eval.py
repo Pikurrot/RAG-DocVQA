@@ -407,7 +407,6 @@ if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
 		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
@@ -418,15 +417,19 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
-		"reorder_chunks": True
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820", # or VT5
+		"reranker_weights": "BAAI/bge-reranker-base",
+		"reorder_chunks": False,
+		"rerank_filter_tresh": 0.4,
+		"rerank_max_chunk_num": 5,
+		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
 		"visible_devices": "6",
 		"save_folder": "14-reorder_chunks",
-		"save_name_append": "",
+		"save_name_append": "reorder_page_y_x",
 		"val_size": 1.0,
-		"log_wandb": False,
+		"log_wandb": True,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,

@@ -1,6 +1,14 @@
 import torch
 from src.VT5 import VT5ForConditionalGeneration
-from src._modules import CustomT5Config, Chunker, Embedder, Retriever, LayoutModel, get_layout_model_map
+from src._modules import (
+	CustomT5Config,
+	Chunker,
+	BiEncoder,
+	Retriever,
+	Reranker,
+	LayoutModel,
+	get_layout_model_map
+)
 from src.utils import flatten, concatenate_patches
 from typing import Any
 import numpy as np
@@ -35,7 +43,8 @@ class RAGVT5(torch.nn.Module):
 			print("Not using layout information")
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
-		self.embed_model = config.get("embed_model", "VT5")
+		self.embed_weights = config.get("embed_weights", "VT5")
+		self.reranker_weights = config.get("reranker_weights", None)
 		self.add_sep_token = config.get("add_sep_token", False)
 		self.cache_dir = config.get("cache_dir", None)
 		print(f"Using {self.cache_dir} as cache folder")
@@ -59,7 +68,11 @@ class RAGVT5(torch.nn.Module):
 		else:
 			self.layout_model = None
 		self.chunker = Chunker(config)
-		self.embedder = Embedder(config, language_model=self.generator.language_backbone if self.embed_model == "VT5" else None)
+		self.embedder = BiEncoder(config, language_model=self.generator.language_backbone if self.embed_weights == "VT5" else None)
+		if self.reranker_weights:
+			self.reranker = Reranker(config)
+		else:
+			self.reranker = None
 		self.retriever = Retriever(config)
 		
 		self.generator = VT5ForConditionalGeneration.from_pretrained(
@@ -169,8 +182,8 @@ class RAGVT5(torch.nn.Module):
 
 		# Get text and question embeddings
 		with (nullcontext() if self.train_mode and self.train_embedder else torch.no_grad()):
-			text_embeddings = self.embedder.embed_multi(text_chunks) # (bs, n_chunks, hidden_size)
-			question_embeddings = self.embedder.embed(questions) # (bs, hidden_size)
+			text_embeddings = self.embedder.batch_forward(text_chunks) # (bs, n_chunks, hidden_size)
+			question_embeddings = self.embedder.forward(questions) # (bs, hidden_size)
 
 		# Get top k chunks and boxes
 		(
@@ -193,6 +206,31 @@ class RAGVT5(torch.nn.Module):
 				images,
 				page_indices
 		)
+
+		if self.reranker:
+			# Rerank
+			(
+				top_k_text,
+				top_k_boxes,
+				top_k_layout_labels,
+				top_k_words_text,
+				top_k_words_boxes,
+				top_k_words_layout_labels,
+				top_k_patches,
+				top_k_page_indices,
+				similarities
+			) =\
+				self.reranker.batch_rerank(
+					questions,
+					top_k_text,
+					top_k_boxes,
+					top_k_layout_labels,
+					top_k_words_text,
+					top_k_words_boxes,
+					top_k_words_layout_labels,
+					top_k_patches,
+					top_k_page_indices
+			)
 
 		# Prepare output
 		if return_steps:

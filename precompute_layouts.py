@@ -7,7 +7,7 @@ from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, Subset
 from src.utils import load_config
-from src._modules import LayoutModel, S2Chunker, Embedder
+from src._modules import LayoutModel, S2Chunker, BiEncoder
 
 def image_lst_collate_fn(batch):
 	return  zip(*batch)
@@ -102,7 +102,7 @@ def worker_process(gpu_id, num_gpus, config, shared_dict):
 		collate_fn=image_lst_collate_fn
 	)
 	layout_model = LayoutModel(config)  # Loads on the chosen GPU
-	embedder = Embedder(config)
+	embedder = BiEncoder(config)
 	clusterer = S2Chunker(config, embedder=embedder)
 	results = precompute_layouts_aggregated(dataloader, layout_model, clusterer, config)
 	

@@ -15,6 +15,7 @@ from doclayout_yolo import YOLOv10
 from huggingface_hub import hf_hub_download
 from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
 from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder as sentence_transformers_CrossEncoder
 from torch.nn import LayerNorm as BertLayerNorm, CrossEntropyLoss
 from typing import Optional, Any, Dict, List, Tuple, Literal
 from collections import Counter
@@ -1126,41 +1127,61 @@ class Chunker(StatComponent):
 		return text_chunks, boxes_chunks
 
 
-class Embedder:
+class BaseEmbedder(ABC):
+	def __init__(
+			self,
+			config: dict
+	):
+		self.device = config.get("device", "cuda")
+		self.cache_dir = config.get("cache_dir", None)
+		self.embedding_dim = None
+
+	@abstractmethod
+	def forward(self, text: Any):
+		raise NotImplementedError
+	
+	def batch_forward(self, text: Any):
+		return [self.forward(t) for t in text]
+	
+	def __call__(self, text: Any):
+		return self.forward(text)
+
+
+class BGEBiEncoderTemplate(ABC):
+	def get_embedding_dim(self):
+		return self.model.base_model.encoder.layer[-1].output.dense.out_features
+	
+	def to(self, device):
+		self.model.to(device)
+	
+class BGECrossEncoderTemplate(ABC):
+	def get_embedding_dim(self):
+		return self.model.model.roberta.encoder.layer[-1].output.dense.out_features
+	
+	def to(self, device):
+		self.model.model.to(device)
+
+
+class BiEncoder(BaseEmbedder, BGEBiEncoderTemplate):
 	def __init__(
 			self,
 			config: dict, 
 			language_model: Optional[Any]=None
 	):
 		# Load config
-		self.embed_model = config.get("embed_model", "VT5")
+		super(BiEncoder, self).__init__(config)
 		self.embed_weights = config.get("embed_weights", None)
-		self.device = config.get("device", "cuda")
-		self.cache_dir = config.get("cache_dir", None)
 		self.language_model = language_model
 
-		if self.embed_model == "VT5":
+		if self.embed_weights == "VT5":
 			self.embedding_dim = 768
 			print("Using VT5 language backbone as embedding model")
 		else:
-			if self.embed_model == "BGE":
-				if self.embed_weights is None:
-					self.embed_weights = "BAAI/bge-small-en-v1.5"
-				self.embedding_dim = 384
-			elif self.embed_model == "BGE-M3":
-				self.embed_weights = "BAAI/bge-m3"
-				self.embedding_dim = 1024
-			elif self.embed_model == "BGE-reranker":
-				self.embed_weights = "BAAI/bge-reranker-v2-m3"
-				self.embedding_dim = 1024
-			self.bge_model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir)
+			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir)
+			self.embedding_dim = self.get_embedding_dim()
 			print(f"Loading embedding model from {self.embed_weights}")
 
-	def to(self, device: Any):
-		if self.embed_model != "VT5":
-			self.bge_model.to(device)
-
-	def embed(self, text: List[str]) -> torch.Tensor:
+	def forward(self, text: List[str]) -> torch.Tensor:
 		"""
 		Embed a list of text
 			:param text: list of strings
@@ -1168,7 +1189,7 @@ class Embedder:
 		"""
 		if not text:
 			return torch.empty(0, self.embedding_dim).to(self.device)
-		if self.embed_model == "VT5":
+		if self.embed_weights == "VT5":
 			input_ids, attention_mask = self.language_model.tokenizer(
 				text,
 				return_tensors="pt",
@@ -1179,23 +1200,102 @@ class Embedder:
 			text_tokens_embeddings = self.language_model.language_backbone.shared(input_ids)
 			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
 		else:
-			text_embeddings = self.bge_model.encode(text, convert_to_tensor=True)
+			text_embeddings = self.model.encode(text, convert_to_tensor=True)
 		return text_embeddings
 
-	def embed_multi(self, text: List[List[str]]) -> List[torch.Tensor]:
+
+class CrossEncoder(BaseEmbedder, BGECrossEncoderTemplate):
+	def __init__(
+			self,
+			config: dict
+	):
+		super(CrossEncoder, self).__init__(config)
+		self.reranker_weights = config.get("reranker_weights", None)
+
+		self.model = sentence_transformers_CrossEncoder(self.reranker_weights, cache_dir=self.cache_dir)
+		self.embedding_dim = self.get_embedding_dim()
+		print(f"Loading reranker model from {self.reranker_weights}")
+
+	def forward(self, text: List[Tuple[str, str]]) -> np.ndarray:
 		"""
-		Embed a list of lists of text
-			:param text: list of lists of strings
-			:return: list of tensors of embeddings
+		Compute the scores of a list of text pairs
+			:param text: list of pairs of strings
+			:return: array of probabilities
 		"""
-		return [self.embed(t) for t in text]
+		if not text:
+			return torch.zeros(len(text)).to(self.device)
+		return self.model.predict(text)
+	
+
+class Reranker:
+	def __init__(
+			self,
+			config: dict,
+			cross_encoder: Optional[CrossEncoder]=None
+	):
+		# Load config
+		self.rerank_filter_tresh = config.get("rerank_filter_tresh", 0.4)
+		self.rerank_max_chunk_num = config.get("rerank_max_chunk_num", 5)
+		self.rerank_min_chunk_num = config.get("rerank_min_chunk_num", 1)
+		if cross_encoder is None:
+			self.cross_encoder = CrossEncoder(config)
+		else:
+			self.cross_encoder = cross_encoder
+
+	def rerank(
+			self,
+			question: str,
+			candidates: List[str], # (k,)
+			*args: List[Any] # (k, *)
+	) -> tuple:
+		"""
+		Rerank a list of candidates given a question
+			:param question: question string
+			:param candidates: list of candidate strings
+			:param args: additional arguments to rerank in the same order
+			:return: reranked candidates and arguments
+		"""
+		question = [question] * len(candidates)
+		pairs = list(zip(question, candidates))
+		
+		with torch.no_grad():
+			scores = self.cross_encoder.forward(pairs)
+		sorted_indices = np.argsort(scores)[::-1]
+
+		# Filter candidates
+		filtered_indices = [i for i in sorted_indices if scores[i] >= self.rerank_filter_tresh]
+		if len(filtered_indices) > self.rerank_max_chunk_num:
+			filtered_indices = filtered_indices[:self.rerank_max_chunk_num]
+		elif len(filtered_indices) < self.rerank_min_chunk_num:
+			filtered_indices = sorted_indices[:self.rerank_min_chunk_num]
+		sorted_indices = filtered_indices
+
+		# Sort candidates and arguments
+		sorted_candidates = [candidates[i] for i in sorted_indices]
+		sorted_args = [[arg[i] for i in sorted_indices] for arg in args]
+		return sorted_candidates, *sorted_args
+
+	def batch_rerank(
+			self,
+			questions: List[str], # (bs, k)
+			candidates: List[List[str]], # (bs, k)
+			*args: List[List[Any]] # (bs, k, *)
+	) -> tuple:
+		sorted_candidates = [] # (bs, k)
+		sorted_args = [[] for _ in range(len(args))] # (bs, k, *)
+		for b, (question, batch_candidates, *batch_args) in enumerate(zip(questions, candidates, *args)):
+			batch_sorted_candidates, *batch_sorted_args = self.rerank(question, batch_candidates, *batch_args)
+			sorted_candidates.append(batch_sorted_candidates)
+			for i in range(len(args)):
+				sorted_args[i].append(batch_sorted_args[i])
+		return sorted_candidates, *sorted_args
 
 
 class S2Chunker:
 	def __init__(
 			self,
 			config: dict,
-			embedder: Optional[Embedder]=None
+			embedder: Optional[BiEncoder]=None
 	):
 		self.config = config
 		self.cluster_mode = config.get("cluster_mode", "spatial+semantic")
@@ -1204,7 +1304,7 @@ class S2Chunker:
 		self.graph = None
 		if self.cluster_mode == "spatial+semantic":
 			if embedder is None:
-				self.embedder = Embedder(config)
+				self.embedder = BiEncoder(config)
 			else:
 				self.embedder = embedder
 				self.tokenizer = self.embedder.bge_model.tokenizer
@@ -1288,7 +1388,7 @@ class S2Chunker:
 			texts = [node['text'] for node in nodes if node.get('text', '').strip()]
 
 			with torch.no_grad():
-				embeddings = self.embedder.embed(texts).cpu().numpy()
+				embeddings = self.embedder.forward(texts).cpu().numpy()
 			semantic_weights = cosine_similarity(embeddings)
 			return semantic_weights
 		except Exception as e:

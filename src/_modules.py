@@ -1234,7 +1234,7 @@ class Reranker:
 			cross_encoder: Optional[CrossEncoder]=None
 	):
 		# Load config
-		self.rerank_filter_tresh = config.get("rerank_filter_tresh", 0.4)
+		self.rerank_filter_tresh = float(config.get("rerank_filter_tresh", 0.4))
 		self.rerank_max_chunk_num = config.get("rerank_max_chunk_num", 5)
 		self.rerank_min_chunk_num = config.get("rerank_min_chunk_num", 1)
 		if cross_encoder is None:

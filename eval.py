@@ -410,7 +410,7 @@ if __name__ == "__main__":
 		"dataset": "MP-DocVQA",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 40, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 10,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -420,14 +420,14 @@ if __name__ == "__main__":
 		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820", # or VT5
 		"reranker_weights": "BAAI/bge-reranker-base",
 		"reorder_chunks": False,
-		"rerank_filter_tresh": 0.4,
-		"rerank_max_chunk_num": 5,
+		"rerank_filter_tresh": 0,
+		"rerank_max_chunk_num": 1,
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "6",
-		"save_folder": "14-reorder_chunks",
-		"save_name_append": "reorder_page_y_x",
+		"visible_devices": "5",
+		"save_folder": "15-reranker",
+		"save_name_append": "10_0_1",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

@@ -1260,6 +1260,8 @@ class Reranker:
 		
 		with torch.no_grad():
 			scores = self.cross_encoder.forward(pairs)
+		if isinstance(scores, torch.Tensor):
+			scores = scores.cpu().numpy()
 		sorted_indices = np.argsort(scores)[::-1]
 
 		# Filter candidates

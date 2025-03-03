@@ -96,6 +96,7 @@ class LoggerEval:
 	def __init__(self, config: dict, experiment_name: str, log_media_interval: int = 1):
 		self.log_wandb = config["log_wandb"]
 		self.log_folder = config["save_dir"]
+		self.compute_stats = config["compute_stats"]
 		self.experiment_name = experiment_name
 		self.log_media_interval = log_media_interval
 		self.log_media_counter = 0
@@ -133,7 +134,7 @@ class LoggerEval:
 			self.log_media_counter = 0
 
 	def log_pie_chart(self, key, values):
-		if not self.log_wandb:
+		if not self.compute_stats:
 			return
 		labels = list(values.keys())
 		sizes = list(values.values())
@@ -148,7 +149,7 @@ class LoggerEval:
 		plt.close(fig)
 
 	def log_spider_chart(self, key, values_list, legend=None, log_scale=False):
-		if not self.log_wandb:
+		if not self.compute_stats:
 			return
 		num_vars = len(values_list[0])  # Number of categories
 		angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()

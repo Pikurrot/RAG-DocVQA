@@ -82,6 +82,7 @@ def save_local(
 		"Model": config["model_name"],
 		"Model weights": config["model_weights"],
 		"Embed weights": config.get("embed_weights", "-"),
+		"Reranker weights": config.get("reranker_weights", "-"),
 		"Layout model weigths": config.get("layout_model_weights", "-"),
 		"Dataset": config["dataset_name"],
 		"Page retrieval": config.get("page_retrieval", "-").capitalize(),
@@ -90,6 +91,7 @@ def save_local(
 		"chunk_size": config.get("chunk_size", "-"),
 		"overlap": config.get("overlap", "-"),
 		"include_surroundings": config.get("include_surroundings", "-"),
+		"rerank_max_chunk_num": config.get("rerank_max_chunk_num", "-"),
 		"Avg accuracy": eval_res["accuracy"],
 		"Avg ANLS": eval_res["anls"],
 		"Avg retrieval precision": eval_res["retrieval_precision"],
@@ -419,8 +421,8 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
-		"reranker_weights": "BAAI/bge-reranker-v2-gemma",
+		"embed_weights": "/data3fast/users/elopez/models/bge-base-finetuned/checkpoint-", # or VT5
+		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
 		"rerank_max_chunk_num": 10,
@@ -429,7 +431,7 @@ if __name__ == "__main__":
 	extra_args = {
 		"visible_devices": "9",
 		"save_folder": "16-big_models",
-		"save_name_append": "bge_reranker_v2_gemma",
+		"save_name_append": "bge_base_finetunned",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

@@ -53,13 +53,10 @@ def train_CL_embs(
 	
 	args = SentenceTransformerTrainingArguments(
 		output_dir=output_dir,
-		per_device_train_batch_size=1,
+		per_device_train_batch_size=24,
 		num_train_epochs=10,
 		logging_steps=1,
-		report_to="wandb",
-		fp16=True,
-		gradient_accumulation_steps=4,
-		gradient_checkpointing=True
+		report_to="wandb"
 	)
 	trainer = SentenceTransformerTrainer(
 		model=model,
@@ -72,9 +69,9 @@ def train_CL_embs(
 
 if __name__ == "__main__":
 	# Prepare model and dataset
-	os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(4,10))
+	os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(7,10))
 	db_file_path = "/data3fast/users/elopez/data/cl_trainset.db"
-	embed_model_name = "BAAI/bge-m3"
+	embed_model_name = "BAAI/bge-base-en-v1.5"
 	cache_dir = "/data3fast/users/elopez/models"
 	print("Loading embedding model...")
 	embed_model = SentenceTransformer(embed_model_name, cache_folder=cache_dir)
@@ -89,6 +86,6 @@ if __name__ == "__main__":
 	)
 
 	# Train the embeddings
-	train_CL_embs(embed_model, dataset, output_dir="/data3fast/users/elopez/models/bge-m3-finetuned")
+	train_CL_embs(embed_model, dataset, output_dir="/data3fast/users/elopez/models/bge-base-finetuned")
 	conn.close()
 	print("Done!")

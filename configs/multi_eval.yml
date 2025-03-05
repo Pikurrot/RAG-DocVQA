@@ -6,7 +6,7 @@ model:
 data:
   dataset: MP-DocVQA
   page_retrieval: Concat
-  batch_size: 40
+  batch_size: 30
   # layout_batch_size: 8
 
 retrieval:
@@ -16,8 +16,8 @@ retrieval:
   overlap: 10
   include_surroundings: 0
   embed_model: BGE # BGE, VT5
-  embed_weights: ["BAAI/bge-base-en-v1.5", "BAAI/bge-large-en-v1.5", "BAAI/bge-m3"]
-  reranker_weights: BAAI/bge-reranker-base
+  embed_weights: /data3fast/users/elopez/models/bge-finetuned/checkpoint-820
+  reranker_weights: ["BAAI/bge-reranker-large", "BAAI/bge-reranker-v2-m3", "BAAI/bge-reranker-v2-gemma"]
   rerank_filter_tresh: 0
   rerank_max_chunk_num: 10
   rerank_min_chunk_num: 1
@@ -37,7 +37,7 @@ retrieval:
 runtime:
   visible_devices: [7, 8, 9]
   save_folder: 16-big_models
-  save_name_append: ["bge_base_en_v1.5", "bge_large_en_v1.5", "bge_m3"]
+  save_name_append: ["bge_reranker_large", "bge-reranker_v2_m3", "bge_reranker_v2_gemma"]
   val_size: 1.0
   log_wandb: True
   log_media_interval: 10

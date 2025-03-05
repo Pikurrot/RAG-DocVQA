@@ -408,7 +408,7 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
-		"embed_model": "JINA", # BGE / VT5 / JINA
+		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
@@ -419,17 +419,17 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "jinaai/jina-embeddings-v2-base-en", # or VT5
-		"reranker_weights": "BAAI/bge-reranker-base",
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		"reranker_weights": "BAAI/bge-reranker-v2-gemma",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
 		"rerank_max_chunk_num": 10,
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "7",
+		"visible_devices": "9",
 		"save_folder": "16-big_models",
-		"save_name_append": "jina_v2_base_en",
+		"save_name_append": "bge_reranker_v2_gemma",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

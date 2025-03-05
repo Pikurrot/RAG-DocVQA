@@ -16,6 +16,7 @@ from huggingface_hub import hf_hub_download
 from transformers import T5Config, AutoFeatureExtractor, AutoModel, AutoImageProcessor, BeitForSemanticSegmentation
 from sentence_transformers import SentenceTransformer
 from sentence_transformers import CrossEncoder as sentence_transformers_CrossEncoder
+from FlagEmbedding import FlagLLMReranker as FlagEmbedding_FlagLLMReranker
 from torch.nn import LayerNorm as BertLayerNorm, CrossEntropyLoss
 from typing import Optional, Any, Dict, List, Tuple, Literal
 from collections import Counter
@@ -1234,7 +1235,37 @@ class CrossEncoder(BaseEmbedder):
 		if not text:
 			return torch.zeros(len(text)).to(self.device)
 		return self.model.predict(text)
+
+
+class FlagLLMReranker(BaseEmbedder):
+	def __init__(
+			self,
+			config: dict
+	):
+		super(FlagLLMReranker, self).__init__(config)
+		self.reranker_weights = config.get("reranker_weights", None)
+		self.reranker_model = config.get("reranker_model", "BGE")
+
+		self.model = FlagEmbedding_FlagLLMReranker(self.reranker_weights, cache_dir=self.cache_dir, use_fp16=True)
+		self.embedding_dim = self.get_embedding_dim()
+		print(f"Loading reranker model from {self.reranker_weights}")
+
+	def get_embedding_dim(self):
+		return self.model.model.base_model.norm.weight.shape.numel()
 	
+	def to(self, device):
+		self.model.model.to(device)
+
+	def forward(self, text: List[Tuple[str, str]]) -> np.ndarray:
+		"""
+		Compute the scores of a list of text pairs
+			:param text: list of pairs of strings
+			:return: array of probabilities
+		"""
+		if not text:
+			return torch.zeros(len(text)).to(self.device)
+		return self.model.compute_score(text)
+
 
 class Reranker:
 	def __init__(
@@ -1247,7 +1278,10 @@ class Reranker:
 		self.rerank_max_chunk_num = config.get("rerank_max_chunk_num", 5)
 		self.rerank_min_chunk_num = config.get("rerank_min_chunk_num", 1)
 		if cross_encoder is None:
-			self.cross_encoder = CrossEncoder(config)
+			if "gemma" in config.get("reranker_weights", ""):
+				self.cross_encoder = FlagLLMReranker(config)
+			else:
+				self.cross_encoder = CrossEncoder(config)
 		else:
 			self.cross_encoder = cross_encoder
 

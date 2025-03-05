@@ -1147,22 +1147,7 @@ class BaseEmbedder(ABC):
 		return self.forward(text)
 
 
-class BGEBiEncoderTemplate(ABC):
-	def get_embedding_dim(self):
-		return self.model[1].word_embedding_dimension
-	
-	def to(self, device):
-		self.model.to(device)
-	
-class BGECrossEncoderTemplate(ABC):
-	def get_embedding_dim(self):
-		return self.model.model.roberta.encoder.layer[-1].output.dense.out_features
-	
-	def to(self, device):
-		self.model.model.to(device)
-
-
-class BiEncoder(BaseEmbedder, BGEBiEncoderTemplate):
+class BiEncoder(BaseEmbedder):
 	def __init__(
 			self,
 			config: dict, 
@@ -1171,15 +1156,30 @@ class BiEncoder(BaseEmbedder, BGEBiEncoderTemplate):
 		# Load config
 		super(BiEncoder, self).__init__(config)
 		self.embed_weights = config.get("embed_weights", None)
+		self.embed_model = config.get("embed_model", "BGE")
 		self.language_model = language_model
 
-		if self.embed_weights == "VT5":
-			self.embedding_dim = 768
+		if self.embed_model == "VT5":
 			print("Using VT5 language backbone as embedding model")
-		else:
+		elif self.embed_model == "BGE":
 			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir)
-			self.embedding_dim = self.get_embedding_dim()
 			print(f"Loading embedding model from {self.embed_weights}")
+		elif self.embed_model == "JINA":
+			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir, trust_remote_code=True)
+			self.model.max_seq_length = 1024
+		self.embedding_dim = self.get_embedding_dim()
+
+	def get_embedding_dim(self):
+		if self.embed_model == "VT5":
+			return 768
+		elif self.embed_model == "BGE":
+			return self.model[1].word_embedding_dimension
+		elif self.embed_model == "JINA":
+			return self.model.get_sentence_embedding_dimension()
+		
+	def to(self, device):
+		if self.embed_model in ["BGE", "JINA"]:
+			self.model.to(device)
 
 	def forward(self, text: List[str]) -> torch.Tensor:
 		"""
@@ -1204,17 +1204,26 @@ class BiEncoder(BaseEmbedder, BGEBiEncoderTemplate):
 		return text_embeddings
 
 
-class CrossEncoder(BaseEmbedder, BGECrossEncoderTemplate):
+class CrossEncoder(BaseEmbedder):
 	def __init__(
 			self,
 			config: dict
 	):
 		super(CrossEncoder, self).__init__(config)
 		self.reranker_weights = config.get("reranker_weights", None)
+		self.reranker_model = config.get("reranker_model", "BGE")
 
 		self.model = sentence_transformers_CrossEncoder(self.reranker_weights, cache_dir=self.cache_dir)
 		self.embedding_dim = self.get_embedding_dim()
 		print(f"Loading reranker model from {self.reranker_weights}")
+
+	def get_embedding_dim(self):
+		if self.reranker_model == "BGE":
+			return self.model.model.roberta.encoder.layer[-1].output.dense.out_features
+		
+	def to(self, device):
+		if self.reranker_model == "BGE":
+			self.model.model.to(device)
 
 	def forward(self, text: List[Tuple[str, str]]) -> np.ndarray:
 		"""

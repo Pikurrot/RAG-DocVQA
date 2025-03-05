@@ -408,6 +408,8 @@ if __name__ == "__main__":
 	args = {
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
+		"embed_model": "JINA", # BGE / VT5 / JINA
+		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
 		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
@@ -417,7 +419,7 @@ if __name__ == "__main__":
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "BAAI/bge-large-en-v1.5", # or VT5
+		"embed_weights": "jinaai/jina-embeddings-v2-base-en", # or VT5
 		"reranker_weights": "BAAI/bge-reranker-base",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
@@ -425,9 +427,9 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "8",
+		"visible_devices": "7",
 		"save_folder": "16-big_models",
-		"save_name_append": "bge_large_en_v1.5",
+		"save_name_append": "jina_v2_base_en",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

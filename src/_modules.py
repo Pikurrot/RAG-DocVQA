@@ -1196,12 +1196,12 @@ class BiEncoder(BaseEmbedder):
 				return_tensors="pt",
 				padding=True,
 				truncation=True
-			).values()
+			).values() # (bs, seq_len), (bs, seq_len)
 			input_ids, attention_mask = input_ids.to(self.device), attention_mask.to(self.device)
-			text_tokens_embeddings = self.language_model.language_backbone.shared(input_ids)
-			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask)
+			text_tokens_embeddings = self.language_model.language_backbone.shared(input_ids) # (bs, seq_len, hidden_dim)
+			text_embeddings = mean_pooling(text_tokens_embeddings, attention_mask) # (bs, hidden_dim)
 		else:
-			text_embeddings = self.model.encode(text, convert_to_tensor=True)
+			text_embeddings = self.model.encode(text, convert_to_tensor=True) # (bs, hidden_dim)
 		return text_embeddings
 
 

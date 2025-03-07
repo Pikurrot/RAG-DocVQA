@@ -1,0 +1,28 @@
+name: mp_docvqa
+channels:
+  - nvidia
+  - huggingface
+  - conda-forge
+
+dependencies:
+  - python==3.10
+  - protobuf<=3.20
+  - pip
+  - tqdm
+  - numpy
+  - pillow
+  - matplotlib
+  - pip:
+    - onnx
+    - wandb==0.16.6
+    - onnxruntime
+    - ipykernel
+    - ipython
+    - sentencepiece
+    - datasets
+    - transformers[sentencepiece]
+    - transformers==4.42.4
+    - editdistance
+    - pdfminer
+    - pdf2image
+    - gradio

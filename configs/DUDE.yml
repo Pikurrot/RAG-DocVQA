@@ -1,0 +1,3 @@
+dataset_name: DUDE
+data_dir: /data-net/storage/datasets
+page_retrieval: Concat  # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)

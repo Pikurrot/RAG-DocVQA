@@ -47,7 +47,7 @@ def build_dataset(
 			"hierarchical_method": True
 		})
 	dataset_config.update(kwargs)
-	if config["dataset_name"].lower() == "mpdocvqa":
+	if config["dataset_name"].lower() == "mp-docvqa":
 		dataset = MPDocVQA(dataset_config)
 	elif config["dataset_name"].lower() == "infographics":
 		dataset = Infographics(dataset_config)

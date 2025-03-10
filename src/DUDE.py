@@ -67,17 +67,20 @@ def build_dude(config, split):
 	
 	if split != "train":
 		# Check if preprocessed dataset exists
-		preprocessed_path = os.path.join(config["data_dir"], "preprocessed", f"DUDE_{split}")
+		preprocessed_path = os.path.join(config["preprocessed_dir"], "preprocessed", f"DUDE_{split}")
 		if os.path.exists(preprocessed_path):
+			print(f"Loading preprocessed DUDE dataset from {preprocessed_path}...")
 			dataset = load_from_disk(preprocessed_path)
 		else:
 			# Load and preprocess dataset
+			print("Mapping DUDE dataset...")
 			dataset = load_dataset(os.path.join(config["data_dir"], "DUDE"), split=split, streaming=False)
 			dataset = dataset.map(
 				dude.format_data, 
 				remove_columns=["ocr_tokens", "ocr_boxes", "images_id"], 
 				batched=True, 
-				batch_size=1
+				batch_size=1,
+				num_proc=30,
 			)
 			
 			# Save preprocessed dataset

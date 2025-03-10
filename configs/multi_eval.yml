@@ -5,7 +5,7 @@ model:
 
 data:
   dataset: Infographics
-  page_retrieval: [Concat, Oracle]
+  page_retrieval: [MaxConf, AnyConf]
   batch_size: 30
   # layout_batch_size: 8
 

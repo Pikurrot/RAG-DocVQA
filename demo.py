@@ -228,7 +228,7 @@ if __name__ == "__main__":
 	print("Starting...")
 	args = {
 		"model": "RAGVT5",
-		"dataset": "MP-DocVQA",
+		"dataset": "Infographics",
 		"embed_model": "BGE",
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat",
@@ -240,7 +240,7 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"embed_weights": "/home/elopezc/models/bge-finetuned/checkpoint-820",
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820",
 		"reorder_chunks": False,
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"rerank_filter_tresh": 0,

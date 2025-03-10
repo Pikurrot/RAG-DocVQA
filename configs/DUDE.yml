@@ -1,3 +1,4 @@
 dataset_name: DUDE
 data_dir: /data-net/storage/datasets
+preprocessed_dir: /data3fast/users/elopez/
 page_retrieval: Concat  # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)

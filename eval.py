@@ -409,19 +409,19 @@ if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "MP-DocVQA",
+		"dataset": "Infographics",
 		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 20,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "/data3fast/users/elopez/models/bge-base-finetuned/checkpoint-", # or VT5
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
@@ -430,8 +430,8 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "9",
-		"save_folder": "16-big_models",
-		"save_name_append": "bge_base_finetunned",
+		"save_folder": "17-infographics",
+		"save_name_append": "",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

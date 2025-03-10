@@ -1621,7 +1621,7 @@ class Retriever(StatComponent):
 		self.k = config.get("chunk_num", 10)
 		self.include_surroundings = config.get("include_surroundings", 0)
 		self.layout_map = get_layout_model_map(config)
-		self.reorder_chunks = config.get("reorder_chunks", True)
+		self.reorder_chunks = config.get("reorder_chunks", False)
 		if self.compute_stats:
 			self.stats["layout_labels_topk_dist"] = {label: 0 for label in self.layout_map.values()}
 

@@ -2,6 +2,7 @@ import transformers
 from src.RAGVT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
 from src.MP_DocVQA import MPDocVQA
+from src.Infographics import Infographics
 from src.DUDE import build_dude
 from transformers import get_scheduler
 from typing import Literal
@@ -48,6 +49,8 @@ def build_dataset(
 	dataset_config.update(kwargs)
 	if config["dataset_name"].lower() == "mpdocvqa":
 		dataset = MPDocVQA(dataset_config)
+	elif config["dataset_name"].lower() == "infographics":
+		dataset = Infographics(dataset_config)
 	elif config["dataset_name"].lower() == "dude":
 		dataset = build_dude(dataset_config, split)
 	return dataset

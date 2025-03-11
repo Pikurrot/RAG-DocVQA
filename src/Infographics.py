@@ -69,7 +69,10 @@ class Infographics(Dataset):
 		ocr_file = os.path.join(self.ocr_dir, record["ocr_output_file"])
 		with open(ocr_file, "r") as f:
 			ocr_data = json.load(f)
-		context = [" ".join([ocr["Text"].lower() for ocr in ocr_data["LINE"]])]
+		if "LINE" in ocr_data:
+			context = [" ".join([ocr["Text"].lower() for ocr in ocr_data["LINE"]])]
+		else:
+			context = []
 
 		if self.use_images:
 			image_names = [os.path.join(self.images_dir, record["image_local_name"])]
@@ -85,10 +88,17 @@ class Infographics(Dataset):
 			return box
 
 		if self.get_raw_ocr_data:
-			words = [[ocr["Text"].lower() for ocr in ocr_data["WORD"]]]
-			boxes = [[get_box(ocr["Geometry"]["Polygon"]) for ocr in ocr_data["WORD"]]]
+			if "WORD" in ocr_data:
+				words = [[ocr["Text"].lower() for ocr in ocr_data["WORD"]]]
+				boxes = [[get_box(ocr["Geometry"]["Polygon"]) for ocr in ocr_data["WORD"]]]
+			else:
+				words = [[]]
+				boxes = [[]]
 
-		start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
+		if context:
+			start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
+		else:
+			start_idxs, end_idxs = 0, 0
 
 		sample_info = {
 			"question_id": record["questionId"],

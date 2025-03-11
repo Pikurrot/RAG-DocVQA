@@ -10,7 +10,7 @@ from src.MP_DocVQA import mpdocvqa_collate_fn
 from src.metrics import Evaluator
 from src.utils import load_config
 from src.build_utils import build_model, build_dataset
-from RAGVT5 import RAGVT5
+from src.RAGVT5 import RAGVT5
 
 
 def build_CL_trainset(
@@ -39,11 +39,7 @@ def build_CL_trainset(
 		# Inference using the model
 		_, pred_answers, _, pred_answers_conf, retrieval = model.inference(
 			batch,
-			return_retrieval=True,
-			chunk_num=kwargs["chunk_num"],
-			chunk_size=kwargs["chunk_size"],
-			overlap=kwargs["overlap"],
-			include_surroundings=kwargs["include_surroundings"]
+			return_retrieval=True
 		)
 		pred_answer_pages = retrieval["page_indices"]
 		questions = batch["questions"] # (bs,)
@@ -88,22 +84,49 @@ if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "MP-DocVQA",
-		"embed_model": "BGE", # BGE, VT5, BGE-M3, BGE-reranker
+		"dataset": "Infographics",
+		"embed_model": "BGE", # BGE / VT5 / JINA
+		"reranker_model": "BGE",
 		"page_retrieval": "AnyConfOracle",
 		"add_sep_token": False,
-		"batch_size": 32,
-		"chunk_num": 10,
+		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"chunk_num": 20,
 		"chunk_size": 60,
+		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"visible_devices": "0",
+		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
+		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		"reranker_weights": "BAAI/bge-reranker-v2-m3",
+		"reorder_chunks": False,
+		"rerank_filter_tresh": 0,
+		"rerank_max_chunk_num": 10,
+		"rerank_min_chunk_num": 1
 	}
+	extra_args = {
+		"visible_devices": "9",
+		"save_folder": "17-infographics",
+		"save_name_append": "",
+		"val_size": 1.0,
+		"log_wandb": True,
+		"log_media_interval": 10,
+		"return_scores_by_sample": True,
+		"return_answers": True,
+		"save_results": False,
+		"save_continuously": True,
+		"compute_stats": False,
+		"compute_stats_examples": False,
+		"n_stats_examples": 5,
+	}
+	args.update(extra_args)
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
+
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	start_time = time.time()
+
 	print("Building model...")
+	config["page_retrieval"] = config["page_retrieval"].lower()
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
@@ -112,15 +135,10 @@ if __name__ == "__main__":
 	train_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Build the training set
-	db_file_path = "/data3fast/users/elopez/data/cl_trainset.db"
-	evaluator = Evaluator(case_sensitive=False)
+	db_file_path = "/data3fast/users/elopez/infographics/cl_trainset.db"
+	evaluator = Evaluator(config, case_sensitive=False)
 	build_CL_trainset(
-		data_loader=train_data_loader,
-		model=model,
-		evaluator=evaluator,
-		db_file_path=db_file_path,
-		chunk_num=config.get("chunk_num", 10),
-		chunk_size=config.get("chunk_size", 60),
-		overlap=config.get("overlap", 10),
-		include_surroundings=config.get("include_surroundings", 0)
+		train_data_loader,
+		model,evaluator,
+		db_file_path=db_file_path
 	)

@@ -47,16 +47,17 @@ def train_CL_embs(
 ):
 	print("Training the embeddings for CL...")
 	model.train()
-	criterion = losses.MultipleNegativesRankingLoss(model)
-	# criterion = CLIPStyleLoss(model)
+	# criterion = losses.MultipleNegativesRankingLoss(model)
+	criterion = CLIPStyleLoss(model)
 	output_dir = kwargs.get("output_dir")
 	
 	args = SentenceTransformerTrainingArguments(
 		output_dir=output_dir,
-		per_device_train_batch_size=50,
-		num_train_epochs=2,
+		per_device_train_batch_size=80,
+		num_train_epochs=4,
+		dataloader_drop_last=True,
 		logging_steps=1,
-		report_to="wandb"
+		report_to="wandb",
 	)
 	trainer = SentenceTransformerTrainer(
 		model=model,
@@ -69,10 +70,10 @@ def train_CL_embs(
 
 if __name__ == "__main__":
 	# Prepare model and dataset
-	os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(8,10))
-	db_file_path = "/data3fast/users/elopez/data/cl_trainset.db"
+	os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+	db_file_path = "/data/users/elopez/data/cl_trainset.db"
 	embed_model_name = "BAAI/bge-m3"
-	cache_dir = "/data3fast/users/elopez/models"
+	cache_dir = "/data/users/elopez/models"
 	print("Loading embedding model...")
 	embed_model = SentenceTransformer(embed_model_name, cache_folder=cache_dir)
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,6 +87,6 @@ if __name__ == "__main__":
 	)
 
 	# Train the embeddings
-	train_CL_embs(embed_model, dataset, output_dir="/data3fast/users/elopez/models/bge-m3-finetuned")
+	train_CL_embs(embed_model, dataset, output_dir="/data/users/elopez/models/bge-m3-finetuned-2")
 	conn.close()
 	print("Done!")

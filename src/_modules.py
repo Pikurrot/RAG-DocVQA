@@ -1754,14 +1754,19 @@ class Retriever(StatComponent):
 		for b in range(bs):
 			batch_patches = []
 			for i, page_idx in enumerate(top_k_page_indices[b]):
-				page: Image.Image = images[b][page_idx] # (H, W, 3)
-				box: np.ndarray = top_k_boxes[b][i].copy() # (4,)
+				page: Image.Image = images[b][page_idx]  # (H, W, 3)
+				box: np.ndarray = top_k_boxes[b][i].copy()  # (4,)
 				# transform to absolute coordinates
 				box[0] = int(box[0] * page.width)
 				box[1] = int(box[1] * page.height)
 				box[2] = int(box[2] * page.width)
 				box[3] = int(box[3] * page.height)
-				patch = page.crop(box) # (h, w, 3)
+				# Ensure proper order of coordinates
+				xmin = min(box[0], box[2])
+				ymin = min(box[1], box[3])
+				xmax = max(box[0], box[2])
+				ymax = max(box[1], box[3])
+				patch = page.crop([xmin, ymin, xmax, ymax])  # (h, w, 3)
 				batch_patches.append(patch)
 			top_k_patches.append(batch_patches)
 

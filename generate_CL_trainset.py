@@ -84,19 +84,19 @@ if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "Infographics",
+		"dataset": "DUDE",
 		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
-		"page_retrieval": "AnyConfOracle",
+		"page_retrieval": "AnyConf",
 		"add_sep_token": False,
-		"batch_size": 30, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 150, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 20,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
 		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
@@ -104,8 +104,8 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "9",
-		"save_folder": "17-infographics",
+		"visible_devices": "4",
+		"save_folder": "18-dude",
 		"save_name_append": "",
 		"val_size": 1.0,
 		"log_wandb": True,
@@ -135,7 +135,7 @@ if __name__ == "__main__":
 	train_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Build the training set
-	db_file_path = "/data3fast/users/elopez/infographics/cl_trainset.db"
+	db_file_path = "/data/users/elopez/dude/cl_trainset.db"
 	evaluator = Evaluator(config, case_sensitive=False)
 	build_CL_trainset(
 		train_data_loader,

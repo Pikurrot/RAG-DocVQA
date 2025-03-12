@@ -90,7 +90,7 @@ class DUDE(Dataset):
 		start_idxs, end_idxs = 0, 0
 
 		sample_info = {
-			"question_id": record["question_id"],
+			"question_id": record["question_id"] if "question_id" in record else 0,
 			"questions": question,
 			"contexts": context,
 			"context_page_corresp": None,

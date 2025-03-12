@@ -47,14 +47,14 @@ def train_CL_embs(
 ):
 	print("Training the embeddings for CL...")
 	model.train()
-	# criterion = losses.MultipleNegativesRankingLoss(model)
-	criterion = CLIPStyleLoss(model)
+	criterion = losses.MultipleNegativesRankingLoss(model)
+	# criterion = CLIPStyleLoss(model)
 	output_dir = kwargs.get("output_dir")
 	
 	args = SentenceTransformerTrainingArguments(
 		output_dir=output_dir,
-		per_device_train_batch_size=80,
-		num_train_epochs=4,
+		per_device_train_batch_size=200,
+		num_train_epochs=15,
 		dataloader_drop_last=True,
 		logging_steps=1,
 		report_to="wandb",
@@ -70,9 +70,9 @@ def train_CL_embs(
 
 if __name__ == "__main__":
 	# Prepare model and dataset
-	os.environ["CUDA_VISIBLE_DEVICES"] = "3"
-	db_file_path = "/data/users/elopez/data/cl_trainset.db"
-	embed_model_name = "BAAI/bge-m3"
+	os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+	db_file_path = "/data/users/elopez/infographics/cl_trainset.db"
+	embed_model_name = "BAAI/bge-small-en-v1.5"
 	cache_dir = "/data/users/elopez/models"
 	print("Loading embedding model...")
 	embed_model = SentenceTransformer(embed_model_name, cache_folder=cache_dir)
@@ -87,6 +87,6 @@ if __name__ == "__main__":
 	)
 
 	# Train the embeddings
-	train_CL_embs(embed_model, dataset, output_dir="/data/users/elopez/models/bge-m3-finetuned-2")
+	train_CL_embs(embed_model, dataset, output_dir="/data/users/elopez/models/bge-finetuned-info")
 	conn.close()
 	print("Done!")

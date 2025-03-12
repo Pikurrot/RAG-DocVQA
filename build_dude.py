@@ -1,5 +1,5 @@
 import argparse
-from src.build_utils import build_dataset
+from src.DUDE import build_dude
 from src.utils import load_config
 
 args = {
@@ -10,4 +10,4 @@ args = {
 
 args = argparse.Namespace(**args)
 config = load_config(args)
-dataset = build_dataset(config, split="val")
+dataset = build_dude(config, split="val")

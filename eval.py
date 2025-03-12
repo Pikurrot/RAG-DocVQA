@@ -409,7 +409,7 @@ if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "Infographics",
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
 		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)

@@ -4,9 +4,9 @@ model:
   # model_weights: /data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt
 
 data:
-  dataset: Infographics
-  page_retrieval: [MaxConf, AnyConf]
-  batch_size: 30
+  dataset: MP-DocVQA
+  page_retrieval: Concat
+  batch_size: 15
   # layout_batch_size: 8
 
 retrieval:
@@ -17,7 +17,7 @@ retrieval:
   include_surroundings: 0
   embed_model: BGE # BGE, VT5
   reranker_model: BGE
-  embed_weights: /data3fast/users/elopez/models/bge-finetuned/checkpoint-820
+  embed_weights: ["/data3fast/users/elopez/models/bge-m3-finetuned/checkpoint-2336", "/data3fast/users/elopez/models/bge-m3-finetuned-2/checkpoint-2336"]
   reranker_weights: BAAI/bge-reranker-v2-m3
   reorder_chunks: False
   rerank_filter_tresh: 0
@@ -38,8 +38,8 @@ retrieval:
 
 runtime:
   visible_devices: [8, 9]
-  save_folder: 17-infographics
-  save_name_append: Infographics
+  save_folder: 16-big_models
+  save_name_append: ["bge_m3_finetuned", "bge_m3_finetuned_2"]
   val_size: 1.0
   log_wandb: True
   log_media_interval: 10

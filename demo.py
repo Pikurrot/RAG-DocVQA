@@ -228,7 +228,7 @@ if __name__ == "__main__":
 	print("Starting...")
 	args = {
 		"model": "RAGVT5",
-		"dataset": "Infographics",
+		"dataset": "DUDE",
 		"embed_model": "BGE",
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat",

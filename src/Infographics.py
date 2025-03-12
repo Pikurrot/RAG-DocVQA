@@ -26,7 +26,6 @@ class Infographics(Dataset):
 		self.page_retrieval = config["page_retrieval"].lower()
 		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage", "anyconforacle"])
 
-		self.max_answers = 2
 		self.images_dir = images_dir
 		self.ocr_dir = ocr_dir
 

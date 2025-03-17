@@ -228,7 +228,7 @@ if __name__ == "__main__":
 	print("Starting...")
 	args = {
 		"model": "RAGVT5",
-		"dataset": "DUDE",
+		"dataset": "MP-DocVQA",
 		"embed_model": "BGE",
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat",
@@ -240,7 +240,7 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/best.ckpt",
+		"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
 		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
 		"reorder_chunks": False,
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "4",
+		"visible_devices": "3",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,
@@ -265,6 +265,7 @@ if __name__ == "__main__":
 	}
 	args.update(extra_args)
 	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
+	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	config["page_retrieval"] = config["page_retrieval"].lower()

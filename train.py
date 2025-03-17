@@ -151,7 +151,7 @@ if __name__ == "__main__":
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
-		"batch_size": 16,
+		"batch_size": 10,
 		"batch_size_eval": 150,
 		"chunk_num": 20,
 		"chunk_size": 60,

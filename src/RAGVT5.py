@@ -74,16 +74,16 @@ class RAGVT5(torch.nn.Module):
 		self.retriever = Retriever(config)
 		
 		if "qwen" in self.model_path.lower():
-			qwen_config = Qwen2_5_VLConfig.from_pretrained(self.model_path, cache_dir=self.cache_dir)
-			qwen_config.update(config)
-			self.generator = QwenVLForConditionalGeneration.from_pretrained(
+			qwen_config = Qwen2_5_VLConfig.from_pretrained(
 				self.model_path,
-				config=qwen_config,
+				cache_dir=self.cache_dir,
 				torch_dtype=torch.bfloat16,
 				attn_implementation="flash_attention_2",
    				device_map="auto",
-				cache_dir=self.cache_dir
+				# load_in_8bit=True
 			)
+			qwen_config.update(config)
+			self.generator = QwenVLForConditionalGeneration(self.model_path, config=qwen_config)
 		else:
 			t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
 			t5_config.visual_module_config = config.get("visual_module", {})
@@ -103,7 +103,10 @@ class RAGVT5(torch.nn.Module):
 
 	def to(self, device: Any):
 		self.device = device
-		self.generator.to(device)
+		try:
+			self.generator.to(device)
+		except ValueError:
+			pass
 		self.embedder.to(device)
 		if self.layout_model is not None:
 			self.layout_model.to(device)

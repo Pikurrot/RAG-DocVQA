@@ -1,16 +1,34 @@
 import torch
+import os
 from transformers import (
 	Qwen2_5_VLForConditionalGeneration,
+	Qwen2_5_VLConfig,
 	AutoProcessor
 )
-from qwen_vl_utils import process_vision_info
-from typing import Optional, Tuple
 
-class QwenVLForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
-	def __init__(self, config):
-		super().__init__(config)
-		config_dict = config.to_dict()
-		self.processor = AutoProcessor.from_pretrained(config_dict["model_weights"])
+class QwenVLForConditionalGeneration(torch.nn.Module):
+	def __init__(self, model_path: str, config: Qwen2_5_VLConfig):
+		super(QwenVLForConditionalGeneration, self).__init__()
+		self.processor = AutoProcessor.from_pretrained(model_path)
+		self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+			model_path,
+			config=config,
+			cache_dir=config.cache_dir,
+			torch_dtype=torch.bfloat16,
+			attn_implementation="flash_attention_2",
+   			device_map="auto",
+		)
+		self.device = "cpu"
+
+	def to(self, device):
+		self.model.to(device)
+		self.device = device
+
+	def eval(self):
+		self.model.eval()
+
+	def train(self):
+		self.model.train()
 
 	def prepare_inputs_for_vqa(
 			self,
@@ -18,7 +36,7 @@ class QwenVLForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
 			words: list, # (bs, n_words)
 			images: list # (bs,) PIL images
 	) -> dict:
-		messages = [
+		messages = [[
 			{
 				"role": "user",
 				"content": [
@@ -35,14 +53,16 @@ class QwenVLForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
 				]
 			}
 			for i in range(len(question))
-		]
+		]]
 		texts = [
 			self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
 			for msg in messages
 		]
+		print("texts", texts)
 		inputs = self.processor(
 			text=texts,
-			images=images,videos=None,
+			images=images,
+			videos=None,
 			padding=True,
 			return_tensors="pt",
 			padding_side="left"

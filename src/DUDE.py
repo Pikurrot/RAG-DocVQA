@@ -14,6 +14,7 @@ class DUDE(Dataset):
 			config: dict,
 	):
 		self.dataset = build_dude(config, config["split"])
+		self.split = config["split"]
 		self.page_retrieval = config["page_retrieval"].lower()
 		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage", "anyconforacle"])
 
@@ -49,7 +50,10 @@ class DUDE(Dataset):
 		record = self.dataset[idx]
 
 		question = record["questions"]
-		answers = [record.get("labels", "").lower()]
+		if self.split == "train":
+			answers = [record.get("labels", "").lower()]
+		else:
+			answers = list(set(answer.lower() for answer in record.get("answers", [""])))
 		answer_page_idx = 0
 		num_pages = len(record["ocr_tokens"])
 

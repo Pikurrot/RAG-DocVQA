@@ -38,7 +38,7 @@ def train_epoch(
 		"language_backbone": model.generator.language_backbone,
 		"spatial_embedding": model.generator.spatial_embedding,
 		"visual_embedding": model.generator.visual_embedding,
-		"layout_embedding": model.generator.layout_embedding
+		# "layout_embedding": model.generator.layout_embedding
 	}
 
 	for batch_idx, batch in enumerate(tqdm(data_loader)):
@@ -51,7 +51,7 @@ def train_epoch(
 		loss = outputs.loss + outputs.ret_loss if hasattr(outputs, "ret_loss") else outputs.loss
 
 		loss.backward()
-		torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+		torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=30.0)
 
 		# Log gradients
 		grad_norms = {}
@@ -76,9 +76,9 @@ def train_epoch(
 			"Train/Batch ANLS": batch_anls,
 			"Train/lr": optimizer.param_groups[0]["lr"],
 			"Train/Batch Grad Norm": grad_norms,
-			"Train/Batch lm_loss": outputs.lm_loss.item(),
-			"Train/Batch layout_loss": outputs.layout_loss.item(),
-			"Train/layout_embedding_scale": model.generator.layout_embedding_scale.item()
+			# "Train/Batch lm_loss": outputs.lm_loss.item(),
+			# "Train/Batch layout_loss": outputs.layout_loss.item(),
+			# "Train/layout_embedding_scale": model.generator.layout_embedding_scale.item()
 		}
 
 		if hasattr(outputs, "ret_loss"):
@@ -146,19 +146,19 @@ if __name__ == "__main__":
     # Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "Infographics",
+		"dataset": "DUDE",
 		"embed_model": "BGE",
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
-		"batch_size": 32,
+		"batch_size": 16,
 		"batch_size_eval": 150,
 		"chunk_num": 20,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
@@ -171,9 +171,9 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "4",
-		"save_folder": "17-infographics",
-		"save_name_append": "train_generator",
-		"eval_start": True,
+		"save_folder": "18-dude",
+		"save_name_append": "train_generator_dude",
+		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,
 		"log_wandb": True,

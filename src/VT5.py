@@ -67,6 +67,8 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		else:
 			safetensors_path = os.path.join(model_path, "model.safetensors")
 			config = kwargs.get("config", None)
+			if "_name_or_path" not in config or not config._name_or_path:
+				config._name_or_path = "rubentito/vt5-base-spdocvqa"
 			model = cls(config)
 			model.load_state_dict(load_file(safetensors_path), strict=False)
 		# Initialize weights and apply final processing

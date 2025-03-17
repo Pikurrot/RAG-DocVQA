@@ -1,5 +1,5 @@
 import torch
-from src.VT5 import VT5ForConditionalGeneration
+import numpy as np
 from src._modules import (
 	CustomT5Config,
 	Chunker,
@@ -11,9 +11,11 @@ from src._modules import (
 )
 from src.utils import flatten, concatenate_patches
 from typing import Any
-import numpy as np
 from time import time
 from contextlib import nullcontext
+from transformers import Qwen2_5_VLConfig
+from src.VT5 import VT5ForConditionalGeneration
+from src.QwenVLInstruct import QwenVLForConditionalGeneration
 
 class RAGVT5(torch.nn.Module):
 	def __init__(self, config: dict):
@@ -57,10 +59,6 @@ class RAGVT5(torch.nn.Module):
 			config.get("train_layout_embedding", False)
 		)
 		self.train_mode = False
-		t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
-		t5_config.visual_module_config = config.get("visual_module", {})
-		t5_config.layout_loss_weight = config.get("layout_loss_weight", 1.0)
-		t5_config.update(config)
 
 		# Load components
 		if self.layout_model_weights and self.page_retrieval != "oracle":
@@ -75,9 +73,26 @@ class RAGVT5(torch.nn.Module):
 			self.reranker = None
 		self.retriever = Retriever(config)
 		
-		self.generator = VT5ForConditionalGeneration.from_pretrained(
-			self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
-		)
+		if "qwen" in self.model_path.lower():
+			qwen_config = Qwen2_5_VLConfig.from_pretrained(self.model_path, cache_dir=self.cache_dir)
+			qwen_config.update(config)
+			self.generator = QwenVLForConditionalGeneration.from_pretrained(
+				self.model_path,
+				config=qwen_config,
+				torch_dtype=torch.bfloat16,
+				attn_implementation="flash_attention_2",
+   				device_map="auto",
+				cache_dir=self.cache_dir
+			)
+		else:
+			t5_config = CustomT5Config.from_pretrained(self.model_path, ignore_mismatched_sizes=True, cache_dir=self.cache_dir)
+			t5_config.visual_module_config = config.get("visual_module", {})
+			t5_config.layout_loss_weight = config.get("layout_loss_weight", 1.0)
+			t5_config.update(config)
+			self.generator = VT5ForConditionalGeneration.from_pretrained(
+				self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
+			)
+
 		if self.add_sep_token:
 			# Add the chunk separator token to the tokenizer if not already present
 			token_id = self.generator.tokenizer.encode("<sep>", add_special_tokens=False)

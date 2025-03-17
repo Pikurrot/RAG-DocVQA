@@ -409,19 +409,19 @@ if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
+		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
 		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 1, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 20,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		# "model_weights": "/data3fast/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator/best.ckpt",
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
@@ -429,8 +429,8 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "9",
-		"save_folder": "17-infographics",
+		"visible_devices": "3",
+		"save_folder": "19-qwen",
 		"save_name_append": "",
 		"val_size": 1.0,
 		"log_wandb": True,

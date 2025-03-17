@@ -71,7 +71,7 @@ def train_CL_embs(
 if __name__ == "__main__":
 	# Prepare model and dataset
 	os.environ["CUDA_VISIBLE_DEVICES"] = "4"
-	db_file_path = "/data/users/elopez/infographics/cl_trainset.db"
+	db_file_path = "/data/users/elopez/dude/cl_trainset.db"
 	embed_model_name = "BAAI/bge-small-en-v1.5"
 	cache_dir = "/data/users/elopez/models"
 	print("Loading embedding model...")
@@ -87,6 +87,6 @@ if __name__ == "__main__":
 	)
 
 	# Train the embeddings
-	train_CL_embs(embed_model, dataset, output_dir="/data/users/elopez/models/bge-finetuned-info")
+	train_CL_embs(embed_model, dataset, output_dir="/data/users/elopez/models/bge-finetuned-dude")
 	conn.close()
 	print("Done!")

@@ -49,7 +49,7 @@ class DUDE(Dataset):
 		record = self.dataset[idx]
 
 		question = record["questions"]
-		answers = list(set(answer.lower() for answer in record.get("answers", [""])))
+		answers = [record.get("labels", "").lower()]
 		answer_page_idx = 0
 		num_pages = len(record["ocr_tokens"])
 

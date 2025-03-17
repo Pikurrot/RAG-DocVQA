@@ -240,7 +240,8 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned/checkpoint-820",
+		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/best.ckpt",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
 		"reorder_chunks": False,
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"rerank_filter_tresh": 0,
@@ -248,7 +249,7 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "7",
+		"visible_devices": "4",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,
@@ -272,7 +273,7 @@ if __name__ == "__main__":
 	print("Building model...")
 	model = build_model(config)
 	print("Building dataset...")
-	dataset = build_dataset(config=config, split="val")
+	dataset = build_dataset(config=config, split="train")
 	
 	# Initialize the dataloader
 	dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)

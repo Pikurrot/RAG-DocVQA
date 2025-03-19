@@ -414,14 +414,16 @@ if __name__ == "__main__":
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
 		"add_sep_token": False,
-		"batch_size": 1, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"batch_size": 130, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
 		"chunk_num": 20,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/model__3.ckpt",
+		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_infographics_train_generator_info/best.ckpt",
 		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
@@ -429,15 +431,15 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "3",
-		"save_folder": "19-qwen",
-		"save_name_append": "",
+		"visible_devices": "4",
+		"save_folder": "19-test",
+		"save_name_append": "test_mpdocvqa",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,
-		"save_results": False,
+		"save_results": True,
 		"save_continuously": True,
 		"compute_stats": False,
 		"compute_stats_examples": False,
@@ -485,7 +487,7 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	dataset = build_dataset(config, split="val", size=config["val_size"])
+	dataset = build_dataset(config, split="test", size=config["val_size"])
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model

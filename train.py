@@ -146,13 +146,13 @@ if __name__ == "__main__":
     # Prepare model and dataset
 	args = {
 		"model": "RAGVT5",
-		"dataset": "DUDE",
+		"dataset": "MP-DocVQA",
 		"embed_model": "BGE",
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat",
 		"add_sep_token": False,
-		"batch_size": 10,
-		"batch_size_eval": 150,
+		"batch_size": 20,
+		"batch_size_eval": 130,
 		"chunk_num": 20,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
@@ -171,8 +171,8 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "4",
-		"save_folder": "18-dude",
-		"save_name_append": "train_generator_dude",
+		"save_folder": "20-mpdocvqa",
+		"save_name_append": "train_generator_mpdocvqa",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,

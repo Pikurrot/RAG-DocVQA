@@ -53,7 +53,11 @@ class DUDE(Dataset):
 		if self.split == "train":
 			answers = [record.get("labels", "").lower()]
 		else:
-			answers = list(set(answer.lower() for answer in record.get("answers", [""])))
+			answers = record.get("answers", [""])
+			if answers is None:
+				answers = [""]
+			else:
+				answers = list(set(answer.lower() for answer in answers))
 		answer_page_idx = 0
 		num_pages = len(record["ocr_tokens"])
 

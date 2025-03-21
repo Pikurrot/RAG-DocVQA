@@ -227,6 +227,7 @@ with gr.Blocks() as demo:
 if __name__ == "__main__":
 	print("Starting...")
 	args = {
+		"use_RAG": False,
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE",
@@ -249,7 +250,7 @@ if __name__ == "__main__":
 		"rerank_min_chunk_num": 1
 	}
 	extra_args = {
-		"visible_devices": "3",
+		"visible_devices": "0,1,2,3,4",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,

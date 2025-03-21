@@ -1159,14 +1159,15 @@ class BiEncoder(BaseEmbedder):
 		self.embed_weights = config.get("embed_weights", None)
 		self.embed_model = config.get("embed_model", "BGE")
 		self.language_model = language_model
+		self.device = config.get("device", "cuda")
 
 		if self.embed_model == "VT5":
 			print("Using VT5 language backbone as embedding model")
 		elif self.embed_model == "BGE":
-			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir)
+			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir, device=self.device)
 			print(f"Loading embedding model from {self.embed_weights}")
 		elif self.embed_model == "JINA":
-			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir, trust_remote_code=True)
+			self.model = SentenceTransformer(self.embed_weights, cache_folder=self.cache_dir, trust_remote_code=True, device=self.device)
 			self.model.max_seq_length = 1024
 		self.embedding_dim = self.get_embedding_dim()
 
@@ -1213,8 +1214,9 @@ class CrossEncoder(BaseEmbedder):
 		super(CrossEncoder, self).__init__(config)
 		self.reranker_weights = config.get("reranker_weights", None)
 		self.reranker_model = config.get("reranker_model", "BGE")
+		self.device = config.get("device", "cuda")
 
-		self.model = sentence_transformers_CrossEncoder(self.reranker_weights, cache_dir=self.cache_dir)
+		self.model = sentence_transformers_CrossEncoder(self.reranker_weights, cache_dir=self.cache_dir, device=self.device)
 		self.embedding_dim = self.get_embedding_dim()
 		print(f"Loading reranker model from {self.reranker_weights}")
 
@@ -1245,8 +1247,9 @@ class FlagLLMReranker(BaseEmbedder):
 		super(FlagLLMReranker, self).__init__(config)
 		self.reranker_weights = config.get("reranker_weights", None)
 		self.reranker_model = config.get("reranker_model", "BGE")
+		self.device = config.get("device", "cuda")
 
-		self.model = FlagEmbedding_FlagLLMReranker(self.reranker_weights, cache_dir=self.cache_dir, use_fp16=True)
+		self.model = FlagEmbedding_FlagLLMReranker(self.reranker_weights, cache_dir=self.cache_dir, use_fp16=True, device=self.device)
 		self.embedding_dim = self.get_embedding_dim()
 		print(f"Loading reranker model from {self.reranker_weights}")
 

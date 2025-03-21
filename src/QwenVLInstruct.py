@@ -14,11 +14,12 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			model_path,
 			config=config,
 			cache_dir=config.cache_dir,
-			torch_dtype=torch.bfloat16,
-			attn_implementation="flash_attention_2",
-   			device_map="auto",
+			torch_dtype=config.torch_dtype,
+			attn_implementation=config._attn_implementation,
+   			device_map=config.device,
 		)
-		self.device = "cpu"
+		self.device = config.device
+		self.max_seq_lenght = 131072
 
 	def to(self, device):
 		self.model.to(device)
@@ -34,7 +35,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			self,
 			question: list, # (bs,)
 			words: list, # (bs, n_words)
-			images: list # (bs,) PIL images
+			images: list # (bs, k) PIL images
 	) -> dict:
 		messages = [[
 			{
@@ -42,8 +43,9 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 				"content": [
 					{
 						"type": "image",
-						"image": "" # for special token
-					},
+						"image": img,
+					} for img in images[i]
+				] + [
 					{
 						"type": "text",
 						"text": "question: " + question[i] +
@@ -58,14 +60,16 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
 			for msg in messages
 		]
-		print("texts", texts)
+
 		inputs = self.processor(
 			text=texts,
 			images=images,
 			videos=None,
 			padding=True,
 			return_tensors="pt",
-			padding_side="left"
+			padding_side="left",
+			max_lenght=self.max_seq_lenght,
+			truncation=True
 		)
 		inputs = inputs.to(self.device)
 		return inputs

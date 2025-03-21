@@ -21,6 +21,7 @@ class RAGVT5(torch.nn.Module):
 	def __init__(self, config: dict):
 		super(RAGVT5, self).__init__()
 		# Load config
+		self.use_RAG = config.get("use_RAG", True)
 		self.model_path = config.get("model_weights", "rubentito/vt5-base-spdocvqa")
 		self.embed_path = config.get("embed_weights", None)
 		self.layout_bs = config.get("layout_batch_size", 1)
@@ -28,21 +29,25 @@ class RAGVT5(torch.nn.Module):
 		self.use_layout_labels = config.get("use_layout_labels", "Default")
 		self.layout_map = get_layout_model_map(config)
 		self.page_retrieval = config.get("page_retrieval")
-		if self.use_precomputed_layouts or self.page_retrieval == "oracle":
-			self.layout_model_weights = None
-		else:
-			self.layout_model_weights = config.get("layout_model_weights", None)
 		print(f"Loading model from {self.model_path}")
-		if self.embed_path:
-			print(f"Loading embedding model from {self.embed_path}")
+		if self.use_RAG:
+			if self.use_precomputed_layouts or self.page_retrieval == "oracle" or not self.use_RAG:
+				self.layout_model_weights = None
+			else:
+				self.layout_model_weights = config.get("layout_model_weights", None)
+			if self.embed_path:
+				print(f"Loading embedding model from {self.embed_path}")
+			else:
+				print("Using the same model for embeddings")
+			if self.layout_model_weights:
+				print(f"Loading layout model from {self.layout_model_weights}")
+			elif self.use_precomputed_layouts:
+				print("Using precomputed layouts")
+			else:
+				print("Not using layout information")
 		else:
-			print("Using the same model for embeddings")
-		if self.layout_model_weights:
-			print(f"Loading layout model from {self.layout_model_weights}")
-		elif self.use_precomputed_layouts:
-			print("Using precomputed layouts")
-		else:
-			print("Not using layout information")
+			self.layout_model_weights = None
+			print("Not using RAG, only model by default")
 		self.max_source_length = config.get("max_source_length", 512)
 		self.device = config.get("device", "cuda")
 		self.embed_weights = config.get("embed_weights", "VT5")
@@ -60,26 +65,13 @@ class RAGVT5(torch.nn.Module):
 		)
 		self.train_mode = False
 
-		# Load components
-		if self.layout_model_weights and self.page_retrieval != "oracle":
-			self.layout_model = LayoutModel(config)
-		else:
-			self.layout_model = None
-		self.chunker = Chunker(config)
-		self.embedder = BiEncoder(config, language_model=self.generator.language_backbone if self.embed_weights == "VT5" else None)
-		if self.reranker_weights:
-			self.reranker = Reranker(config)
-		else:
-			self.reranker = None
-		self.retriever = Retriever(config)
-		
 		if "qwen" in self.model_path.lower():
 			qwen_config = Qwen2_5_VLConfig.from_pretrained(
 				self.model_path,
 				cache_dir=self.cache_dir,
 				torch_dtype=torch.bfloat16,
 				attn_implementation="flash_attention_2",
-   				device_map="auto",
+   				device_map=self.device,
 				# load_in_8bit=True
 			)
 			qwen_config.update(config)
@@ -91,7 +83,21 @@ class RAGVT5(torch.nn.Module):
 			t5_config.update(config)
 			self.generator = VT5ForConditionalGeneration.from_pretrained(
 				self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
-			)
+			).to(self.device)
+
+		# Load components
+		if self.use_RAG:
+			if self.layout_model_weights and self.page_retrieval != "oracle":
+				self.layout_model = LayoutModel(config)
+			else:
+				self.layout_model = None
+			self.chunker = Chunker(config)
+			self.embedder = BiEncoder(config, language_model=self.generator.language_backbone if self.embed_weights == "VT5" else None)
+			if self.reranker_weights:
+				self.reranker = Reranker(config)
+			else:
+				self.reranker = None
+			self.retriever = Retriever(config)
 
 		if self.add_sep_token:
 			# Add the chunk separator token to the tokenizer if not already present
@@ -107,9 +113,10 @@ class RAGVT5(torch.nn.Module):
 			self.generator.to(device)
 		except ValueError:
 			pass
-		self.embedder.to(device)
-		if self.layout_model is not None:
-			self.layout_model.to(device)
+		if self.use_RAG:
+			self.embedder.to(device)
+			if self.layout_model is not None:
+				self.layout_model.to(device)
 
 	def eval(self):
 		self.generator.eval()
@@ -298,20 +305,35 @@ class RAGVT5(torch.nn.Module):
 	) -> tuple:
 		# Retrieve top k chunks and corresponding image patches
 		start_time = time()
-		(
-			top_k_text,
-			top_k_boxes,
-			top_k_layout_labels,
-			top_k_patches,
-			top_k_page_indices,
-			top_k_words_text,
-			top_k_words_boxes,
-			top_k_words_layout_labels,
-			words_layout_labels_pages,
-			similarities,
-			steps,
-			stats
-		) = self.online_retrieve(batch, return_steps=return_steps)
+		if self.use_RAG:
+			(
+				top_k_text,
+				top_k_boxes,
+				top_k_layout_labels,
+				top_k_patches,
+				top_k_page_indices,
+				top_k_words_text,
+				top_k_words_boxes,
+				top_k_words_layout_labels,
+				words_layout_labels_pages,
+				similarities,
+				steps,
+				stats
+			) = self.online_retrieve(batch, return_steps=return_steps)
+		else:
+			top_k_text = [[" ".join(batch["words"][b][i]) for i in range(len(batch["words"][b]))] for b in range(len(batch["words"]))]
+			top_k_boxes = None
+			top_k_layout_labels = [[1] * len(batch["words"][b]) for b in range(len(batch["words"]))]
+			top_k_patches = batch["images"]
+			top_k_page_indices = [[0] * len(batch["words"][b]) for b in range(len(batch["words"]))]
+			top_k_words_text = batch["words"]
+			top_k_words_boxes = batch["boxes"]
+			top_k_words_layout_labels = [[[1] * len(batch["words"][b][i]) for i in range(len(batch["words"][b]))] for b in range(len(batch["words"]))]
+			words_layout_labels_pages = None
+			similarities = None
+			steps = {"text_chunks": top_k_text, "layout_info": [[]], "layout_segments": [[]], "layout_info_raw": [[]]}
+			stats = {"stats": {"layout_time": 0}, "stats_examples": {}}
+			
 		retrieval_time = time() - start_time
 		bs = len(top_k_text)
 		# Generate
@@ -327,7 +349,10 @@ class RAGVT5(torch.nn.Module):
 			new_batch["words"] = [flatten(b, add_sep_token) for b in top_k_words_text]  # (bs, k * n_words)
 			new_batch["boxes"] = [flatten(b, add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
 			new_batch["layout_labels"] = [flatten(b, add_sep_token) for b in top_k_words_layout_labels]  # (bs, k * n_words)
-			new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
+			if not self.use_RAG or "qwen" in self.model_path.lower():
+				new_batch["images"] = top_k_patches  # (bs, k, h, w, 3)
+			else:
+				new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			with (nullcontext() if self.train_mode and self.train_generator else torch.no_grad()):
 				result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)

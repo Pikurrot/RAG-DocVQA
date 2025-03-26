@@ -26,6 +26,8 @@ class Evaluator:
 			answer_types: List[str]=None,
 			top_k_layout_labels: List[List[int]]=None
 	) -> dict:
+		if preds is None:
+			return {"accuracy": [0]*len(gt_answers), "anls": [0]*len(gt_answers)}
 		answer_types = answer_types if answer_types is not None else ["string" for batch_idx in range(len(gt_answers))]
 		batch_accuracy = []
 		batch_anls = []
@@ -87,6 +89,8 @@ class Evaluator:
 			batch: dict,
 			retrieval: dict
 	) -> dict:
+		if not retrieval:
+			return {"chunk_score": [0]*len(batch["answers"])}
 		# Check if the answer is in the chunks
 		chunks = retrieval["text"] # (bs, k)
 		answers = batch["answers"] # (bs, n)

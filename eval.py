@@ -106,6 +106,7 @@ def save_local(
 		"Total retrieval time (layout)": f"{total_layout_time} ({eval_res['total_layout_time']/inf_time_f*100:.2f}%)",
 		"Total retrieval time": f"{total_retrieval_time} ({eval_res['total_retrieval_time']/inf_time_f*100:.2f}%)",
 		"Total generation time": f"{total_generation_time} ({eval_res['total_generation_time']/inf_time_f*100:.2f}%)",
+		"Out of memory": f"{eval_res['out_of_memory'][0]} ({eval_res['out_of_memory'][1]*100:.2f}%)",
 		"Retrieval stats": eval_res["retrieval_stats"],
 		"Scores by samples": eval_res["scores_by_samples"]
 	}
@@ -219,6 +220,7 @@ def evaluate(
 	results = []
 	retrieval_stats = {}
 	retrieval_stats_examples = {}
+	out_of_memory = 0
 
 	all_pred_answers = []
 	model.eval()
@@ -229,25 +231,35 @@ def evaluate(
 		n_samples += bs
 
 		# Inference using the model
-		if model_name == "Hi-VT5":
-			start_gen_time = time.time()
-			_, pred_answers, pred_answer_pages, pred_answers_conf = model.inference(
-				batch,
-				return_pred_answer=True
-			)
-			retrieval = {
-				"retrieval_time": 0,
-				"generation_time": time.time() - start_gen_time
-			}
-		elif model_name == "RAGVT5":
-			_, pred_answers, _, pred_answers_conf, retrieval = model.inference(
-				batch,
-				return_retrieval=True
-			)
-			pred_answer_pages = retrieval["page_indices"]
+		try:
+			if model_name == "Hi-VT5":
+				start_gen_time = time.time()
+				_, pred_answers, pred_answer_pages, pred_answers_conf = model.inference(
+					batch,
+					return_pred_answer=True
+				)
+				retrieval = {
+					"retrieval_time": 0,
+					"generation_time": time.time() - start_gen_time
+				}
+			elif model_name == "RAGVT5":
+				_, pred_answers, _, pred_answers_conf, retrieval = model.inference(
+					batch,
+					return_retrieval=True
+				)
+				pred_answer_pages = retrieval["page_indices"]
+		except torch.OutOfMemoryError:
+			print("Out of memory warning. Skipping batch.")
+			pred_answers = None
+			pred_answer_pages = None
+			pred_answers_conf = None
+			retrieval = {}
+			out_of_memory += 1
+			gc.collect()
+			torch.cuda.empty_cache()
 
 		# Compute metrics
-		metrics = evaluator.get_metrics(batch["answers"], pred_answers, batch.get("answer_type", None), retrieval["top_k_layout_labels"])
+		metrics = evaluator.get_metrics(batch["answers"], pred_answers, batch.get("answer_type"), retrieval.get("top_k_layout_labels"))
 
 		# Evaluate retrieval
 		if "answer_page_idx" in batch and pred_answer_pages is not None:
@@ -268,10 +280,10 @@ def evaluate(
 					"accuracy": metrics["accuracy"][_b],
 					"anls": metrics["anls"][_b],
 					"ret_prec": ret_metric[_b],
-					"pred_answer": pred_answers[_b],
+					"pred_answer": pred_answers[_b] if pred_answers is not None else "",
 					"actual_answer": batch["answers"][_b],
-					"pred_answer_conf": pred_answers_conf[_b],
-					"pred_answer_page": pred_answer_pages[_b] if pred_answer_pages is not None else None,
+					"pred_answer_conf": pred_answers_conf[_b] if pred_answers_conf is not None else 0,
+					"pred_answer_page": pred_answer_pages[_b] if pred_answer_pages is not None else 0,
 					"chunk_score": ret_eval["chunk_score"][_b],
 				}
 
@@ -286,16 +298,17 @@ def evaluate(
 			total_anls += sum(metrics["anls"])
 			total_ret_prec += sum(ret_metric)
 			total_chunk_scores += sum(ret_eval["chunk_score"])
-		load_time += sum(batch["load_time"])
-		layout_time += retrieval["stats"]["layout_time"]	
-		retrieval_time += retrieval["retrieval_time"]
-		generation_time += retrieval["generation_time"]
 		
-		retrieval["stats"]["layout_labels_accuracy"] = metrics["layout_labels_accuracy"]
-		retrieval["stats"]["layout_labels_anls"] = metrics["layout_labels_anls"]
+		if retrieval:
+			load_time += sum(batch["load_time"])
+			layout_time += retrieval["stats"]["layout_time"]	
+			retrieval_time += retrieval["retrieval_time"]
+			generation_time += retrieval["generation_time"]
+			retrieval["stats"]["layout_labels_accuracy"] = metrics["layout_labels_accuracy"]
+			retrieval["stats"]["layout_labels_anls"] = metrics["layout_labels_anls"]
 
 		if return_answers:
-			all_pred_answers.extend(pred_answers)
+			all_pred_answers.extend(pred_answers if pred_answers is not None else [])
 
 		if save_results:
 			for i in range(bs):
@@ -309,7 +322,7 @@ def evaluate(
 					answer_page = pred_answer_pages[i][0]
 				results.append({
 					"questionId": batch["question_id"][i],
-					"answer": pred_answers[i],
+					"answer": pred_answers[i] if pred_answers is not None else None,
 					"answer_page": answer_page
 				})
 
@@ -330,26 +343,27 @@ def evaluate(
 		# 		max_len = len(examples[max_key])
 		# 		print(f"Batch {b}: Stat examples key '{key}', max length key: '{max_key}' with {max_len} examples")
 
-		del retrieval["stats"]["layout_time"]
-		if b == 0:
-			retrieval_stats = retrieval["stats"]
-			retrieval_stats_examples = retrieval["stats_examples"]
-		else:
-			for key in retrieval_stats:
-				if isinstance(retrieval_stats[key], Counter):
-					retrieval_stats[key] += retrieval["stats"][key]
-					for k in retrieval["stats_examples"][key]:
-						if k not in retrieval_stats_examples[key]:
-							retrieval_stats_examples[key][k] = []
-						retrieval_stats_examples[key][k].extend(retrieval["stats_examples"][key][k])
-						retrieval_stats_examples[key][k] = retrieval_stats_examples[key][k][:model.n_stats_examples]
-				else:
-					for k in retrieval_stats[key]:
-						if isinstance(retrieval_stats[key][k], list):
-							retrieval_stats[key][k].extend(retrieval["stats"][key][k])
-						else:
-							retrieval_stats[key][k] += retrieval["stats"][key][k]
-		
+		if retrieval:
+			del retrieval["stats"]["layout_time"]
+			if b == 0:
+				retrieval_stats = retrieval["stats"]
+				retrieval_stats_examples = retrieval["stats_examples"]
+			else:
+				for key in retrieval_stats:
+					if isinstance(retrieval_stats[key], Counter):
+						retrieval_stats[key] += retrieval["stats"][key]
+						for k in retrieval["stats_examples"][key]:
+							if k not in retrieval_stats_examples[key]:
+								retrieval_stats_examples[key][k] = []
+							retrieval_stats_examples[key][k].extend(retrieval["stats_examples"][key][k])
+							retrieval_stats_examples[key][k] = retrieval_stats_examples[key][k][:model.n_stats_examples]
+					else:
+						for k in retrieval_stats[key]:
+							if isinstance(retrieval_stats[key][k], list):
+								retrieval_stats[key][k].extend(retrieval["stats"][key][k])
+							else:
+								retrieval_stats[key][k] += retrieval["stats"][key][k]
+
 		# Free memory
 		del pred_answers, pred_answer_pages, pred_answers_conf, metrics, ret_metric, ret_eval, batch
 		gc.collect()
@@ -391,6 +405,7 @@ def evaluate(
 				"total_layout_time": layout_time,
 				"total_retrieval_time": retrieval_time,
 				"total_generation_time": generation_time,
+				"out_of_memory": (out_of_memory, out_of_memory/n_samples),
 				"retrieval_stats": retrieval_stats.copy(),
 				"retrieval_stats_examples": retrieval_stats_examples.copy(),
 				"results": results
@@ -408,7 +423,7 @@ def evaluate(
 if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
-		"use_RAG": False,
+		"use_RAG": True,
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
 		"embed_model": "BGE", # BGE / VT5 / JINA
@@ -433,11 +448,11 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:4",
+		"device": "cuda:3",
 		"save_folder": "19-test",
-		"save_name_append": "test_mpdocvqa_qwen_no_rag",
+		"save_name_append": "test_mpdocvqa_qwen_rag",
 		"val_size": 1.0,
-		"log_wandb": True,
+		"log_wandb": False,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,

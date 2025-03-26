@@ -5,6 +5,7 @@ from transformers import (
 	Qwen2_5_VLConfig,
 	AutoProcessor
 )
+from qwen_vl_utils import process_vision_info
 
 class QwenVLForConditionalGeneration(torch.nn.Module):
 	def __init__(self, model_path: str, config: Qwen2_5_VLConfig):
@@ -37,21 +38,33 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			words: list, # (bs, n_words)
 			images: list # (bs, k) PIL images
 	) -> dict:
+		resized_images = []
+		for batch_imgs in images:
+			batch_resized = []
+			for img in batch_imgs:
+				if img.width < 28 or img.height < 28:
+					new_width = max(img.width, 28)
+					new_height = max(img.height, 28)
+					batch_resized.append(img.resize((new_width, new_height)))
+				else:
+					batch_resized.append(img)
+			resized_images.append(batch_resized)
+
 		messages = [[
 			{
 				"role": "user",
 				"content": [
 					{
-						"type": "image",
-						"image": img,
-					} for img in images[i]
-				] + [
-					{
 						"type": "text",
 						"text": "question: " + question[i] +
-								" context: " + " ".join(words[i]) + 
-								". Directly provide only a short answer to the question."
+								"Directly provide only a short answer to the question. " +
+								"Context: " + " ".join(words[i])
+					}] + [
+					{
+						"type": "image",
+						"image": img,
 					}
+					for img in resized_images[i]
 				]
 			}
 			for i in range(len(question))
@@ -60,16 +73,17 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
 			for msg in messages
 		]
+		image_inputs, _ = process_vision_info(messages)
 
 		inputs = self.processor(
 			text=texts,
-			images=images,
+			images=image_inputs,
 			videos=None,
 			padding=True,
 			return_tensors="pt",
 			padding_side="left",
-			max_lenght=self.max_seq_lenght,
-			truncation=True
+			# max_lenght=self.max_seq_lenght,
+			# truncation=True
 		)
 		inputs = inputs.to(self.device)
 		return inputs

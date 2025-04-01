@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import argparse
 from src._modules import (
 	CustomT5Config,
 	Chunker,
@@ -83,7 +84,8 @@ class RAGVT5(torch.nn.Module):
 			t5_config.update(config)
 			self.generator = VT5ForConditionalGeneration.from_pretrained(
 				self.model_path, config=t5_config, ignore_mismatched_sizes=True, cache_dir=self.cache_dir
-			).to(self.device)
+			)
+			self.generator.to(self.device)
 
 		# Load components
 		if self.use_RAG:

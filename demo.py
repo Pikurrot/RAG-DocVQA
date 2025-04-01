@@ -227,7 +227,7 @@ with gr.Blocks() as demo:
 if __name__ == "__main__":
 	print("Starting...")
 	args = {
-		"use_RAG": False,
+		"use_RAG": True,
 		"model": "RAGVT5",
 		"dataset": "MP-DocVQA",
 		"embed_model": "BGE",
@@ -275,7 +275,7 @@ if __name__ == "__main__":
 	print("Building model...")
 	model = build_model(config)
 	print("Building dataset...")
-	dataset = build_dataset(config=config, split="train")
+	dataset = build_dataset(config=config, split="val")
 	
 	# Initialize the dataloader
 	dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)

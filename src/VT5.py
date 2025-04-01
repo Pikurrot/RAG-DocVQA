@@ -22,6 +22,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.page_retrieval = config_dict.get("page_retrieval", None)
 		self.max_source_length = config_dict.get("max_source_length", 512)
 		self.use_layout_labels = config_dict.get("use_layout_labels", "Default") if self.page_retrieval != "oracle" else "Default"
+		self.train_mode = False
 
 		# Load components
 		self.tokenizer = T5Tokenizer.from_pretrained(config._name_or_path, ignore_mismatched_sizes=True)
@@ -81,6 +82,22 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		self.visual_embedding.to(device)
 		if self.use_layout_labels != "Default":
 			self.layout_embedding.to(device)
+
+	def eval(self):
+		self.train_mode = False
+		self.language_backbone.eval()
+		self.spatial_embedding.eval()
+		self.visual_embedding.eval()
+		if self.use_layout_labels != "Default":
+			self.layout_embedding.eval()
+
+	def train(self):
+		self.train_mode = True
+		self.language_backbone.train()
+		self.spatial_embedding.train()
+		self.visual_embedding.train()
+		if self.use_layout_labels != "Default":
+			self.layout_embedding.train()
 
 	def prepare_inputs_for_vqa(
 			self,
@@ -209,13 +226,14 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		else:
 			layout_labels = None
 		images = batch["images"]
-		answers = batch.get("answers", None)
+		answers = batch.get("answers", None) if self.train_mode else None
 
 		input_embeds, attention_mask, labels, tensor_layout_labels = self.prepare_inputs_for_vqa(
 			question, words, boxes, layout_labels, images, answers
 		)
 
 		if labels is not None:
+			print("Training mode")
 			decoder_input_ids = shift_tokens_right(
 				labels,
 				pad_token_id=self.tokenizer.pad_token_id,
@@ -237,6 +255,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				pred_answers, pred_answers_conf = None, None
 			pred_answer_pages = None
 		else:
+			print("Inference mode")
 			outputs = None
 			pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
 

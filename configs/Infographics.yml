@@ -1,5 +1,5 @@
 dataset_name: Infographics
-json_dir: /data3fast/users/elopez/infographics/qas  # /imdb/collection/imdb_train.npy
-ocr_dir: /data3fast/users/elopez/infographics/ocr
-images_dir: /data3fast/users/elopez/infographics/images
+json_dir: /data/users/elopez/infographics/qas  # /imdb/collection/imdb_train.npy
+ocr_dir: /data/users/elopez/infographics/ocr
+images_dir: /data/users/elopez/infographics/images
 page_retrieval: Concat  # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)

@@ -1,8 +1,8 @@
 save_dir: save/
 model_name: RAGVT5
 model_weights: rubentito/vt5-base-spdocvqa
-cache_dir: /data3fast/users/elopez/models
-checkpoint_dir: /data3fast/users/elopez/checkpoints
+cache_dir: /data/users/elopez/models
+checkpoint_dir: /data/users/elopez/checkpoints
 max_source_length: 512
 device: cuda
 data_parallel: False
@@ -10,7 +10,7 @@ data_parallel: False
 training_parameters:
   lr: 2e-4
   batch_size: 4
-  train_epochs: 2
+  train_epochs: 4
   warmup_iterations: 1000
 
 visual_module:

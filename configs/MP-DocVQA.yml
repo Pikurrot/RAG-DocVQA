@@ -1,5 +1,5 @@
 dataset_name: MP-DocVQA
-imdb_dir: /data3fast/users/elopez/data/mpdocvqa_imdb  # /imdb/collection/imdb_train.npy
-images_dir: /data3fast/users/elopez/data/images
-layouts_dir: /data3fast/users/elopez/data/
+imdb_dir: /data/users/elopez/data/mpdocvqa_imdb  # /imdb/collection/imdb_train.npy
+images_dir: /data/users/elopez/data/images
+layouts_dir: /data/users/elopez/data/
 page_retrieval: Concat  # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom (HiVT5 only)

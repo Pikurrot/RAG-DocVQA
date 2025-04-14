@@ -425,7 +425,7 @@ if __name__ == "__main__":
 	args = {
 		"use_RAG": False,
 		"model": "RAGVT5",
-		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
+		"dataset": "DUDE", # MP-DocVQA / Infographics / DUDE
 		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
@@ -438,8 +438,8 @@ if __name__ == "__main__":
 		"include_surroundings": 0,
 		"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
 		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_infographics_train_generator_info/best.ckpt",
-		# "embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
-		"embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
 		"lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
 		"reorder_chunks": False,
@@ -449,9 +449,9 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:2",
+		"device": "cuda:1",
 		"save_folder": "20-qwen-lora-test",
-		"save_name_append": "test_info_no_rag",
+		"save_name_append": "test_dude_no_rag",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

@@ -1,14 +1,15 @@
 import transformers
 from src.RAGVT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
+from src.RAGPix2Struct import RAGPix2Struct
 from src.MP_DocVQA import MPDocVQA
 from src.Infographics import Infographics
 from src.DUDE import DUDE
 from transformers import get_scheduler
-from typing import Literal
+from typing import Literal, Union
 
 def build_optimizer(
-		model: RAGVT5,
+		model: Union[RAGVT5, RAGPix2Struct],
 		length_train_loader: int,
 		config: dict
 ):
@@ -26,6 +27,8 @@ def build_model(config: dict) -> RAGVT5:
 		model = RAGVT5(config)
 	elif config["model_name"] == "Hi-VT5":
 		model = Proxy_HiVT5(config)
+	elif config["model_name"] == "RAGPix2Struct":
+		model = RAGPix2Struct(config)
 	model.to(device)
 	return model
 

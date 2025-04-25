@@ -1,0 +1,12 @@
+save_dir: save/
+model_name: RAGPix2Struct
+model_weights: google/pix2struct-docvqa-base
+cache_dir: /data/users/elopez/models
+checkpoint_dir: /data/users/elopez/checkpoints
+device: cuda
+
+training_parameters:
+  lr: 2e-4
+  batch_size: 4
+  train_epochs: 4
+  warmup_iterations: 1000

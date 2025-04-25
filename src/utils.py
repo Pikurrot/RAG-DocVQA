@@ -1,6 +1,5 @@
 import ast
 import random
-from PIL import Image
 import os
 import yaml
 import json
@@ -8,7 +7,9 @@ import argparse
 import numpy as np
 import torch
 import difflib
+import torch.nn.functional as F
 from typing import Literal, Tuple, List
+from PIL import Image
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="MP-DocVQA framework")
@@ -431,3 +432,22 @@ def smart_json_dumps(obj, indent=2, level=0, max_inline_length=80, smart_start_l
 	
 	# For any other types, fall back to json.dumps.
 	return json.dumps(obj, ensure_ascii=False)
+
+
+def late_interaction(query, patches):
+	"""ColBert's Late interaction"""
+	# L2 normalization
+	query_norm = F.normalize(query, p=2, dim=-1) # (1, max_seq_len, hidden_size)
+	patches_norm = F.normalize(patches, p=2, dim=-1) # (n, max_seq_len, hidden_size)
+
+	query_exp = query_norm.expand(patches_norm.size(0), -1, -1) # (n, max_seq_len, hidden_size)
+	
+	# Cosine similarity for each token pair (bmm = cosine because we did normalization)
+	S = torch.bmm(query_exp, patches_norm.transpose(1, 2)) # (n, max_seq_len, max_seq_len)
+
+	# For each query token, take th max similarity across all patches
+	max_sim,_ = torch.max(S, dim=-1) # (n, max_seq_len)
+
+	# Sum the max similarity across all query tokens
+	scores = torch.sum(max_sim, dim=-1) # (n,)
+	return scores

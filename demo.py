@@ -81,23 +81,24 @@ def process(batch):
 
 	# Prepare retrieved information
 	retrieved_patches = retrieval["patches"][0]  # List of PIL images
-	retrieved_chunks_list = retrieval["text"][0]  # List of strings
+	retrieved_chunks_list = retrieval["text"][0] if "text" in retrieval else [""]*len(retrieved_patches)  # List of strings
 	retrieved_top_k_layout_labels = retrieval["top_k_layout_labels"][0]  # List of integers
 	retrieved_chunks = "\n\n".join([f"Chunk {i+1} ({layout_map[label]}):\n{text}" for i, (text, label) in enumerate(zip(retrieved_chunks_list, retrieved_top_k_layout_labels))])
 
-	retrieved_page_indices_list = retrieval["page_indices"][0]  # List of integers
-	if model.page_retrieval == "oracle":
+	retrieved_page_indices_list = retrieval["page_indices"][0] if "page_indices" in retrieval else [0]*len(retrieved_patches)  # List of integers
+	page_retrieval = model.page_retrieval if hasattr(model, "page_retrieval") else "concat"
+	if page_retrieval == "oracle":
 		retrieved_page_indices = str(retrieved_page_indices_list[0])
-	elif model.page_retrieval == "concat":
+	elif page_retrieval == "concat":
 		retrieved_page_indices = ", ".join([str(idx) for idx in retrieved_page_indices_list])
-	elif model.page_retrieval == "maxconf":
+	elif page_retrieval == "maxconf":
 		retrieved_page_indices = ", ".join([
 			f"[{str(idx)}]" if i == retrieval["max_confidence_indices"][0] else str(idx)
 			for i, idx in enumerate(retrieved_page_indices_list)
 		])
 
 	# Other info
-	all_chunks_list = retrieval["steps"]["text_chunks"][0]  # List of strings
+	all_chunks_list = retrieval["steps"]["text_chunks"][0] if "text_chunks" in retrieval["steps"] else [""]*len(retrieved_patches)  # List of strings
 	all_chunks = "\n\n".join([f"Chunk {i+1}:\n{text}" for i, text in enumerate(all_chunks_list)])
 
 	# Draw layout boxes on original images
@@ -122,7 +123,7 @@ def process(batch):
 	
 	# Draw layout segments and raw boxes on original images
 	retrieved_layout_segments = retrieval["steps"]["layout_segments"][0]  # List of 2d arrays
-	retrieved_layout_info_raw = retrieval["steps"]["layout_info_raw"][0]  # List of dictionaries
+	retrieved_layout_info_raw = retrieval["steps"]["layout_info"][0]  # List of dictionaries
 	images_with_segments_and_boxes = [img.copy() for img in original_images]
 	for i, (layout_segment, layout_info_raw) in enumerate(zip(retrieved_layout_segments, retrieved_layout_info_raw)):
 		img = images_with_segments_and_boxes[i].convert("RGBA")
@@ -139,14 +140,21 @@ def process(batch):
 		boxes = layout_info_raw.get("boxes", [])
 		labels = layout_info_raw.get("labels", [])
 		for j, box in enumerate(boxes):
+			if box[0] <= 1:
+				box = [
+					box[0] * original_images[i].width,
+					box[1] * original_images[i].height,
+					box[2] * original_images[i].width,
+					box[3] * original_images[i].height
+				]
 			draw.rectangle(box, outline=color_map[labels[j]], width=3)
 			font = ImageFont.truetype("arial.ttf", 40)
-			draw.text((box[0], box[1]-40), raw_layout_map[labels[j]], fill=color_map[labels[j]], font=font)
+			draw.text((box[0], box[1]-40), layout_map[labels[j]], fill=color_map[labels[j]], font=font)
 		images_with_segments_and_boxes[i] = blended
 
 	# Model outputs
 	predicted_answer = pred_answers[0]
-	predicted_confidence = pred_answers_conf[0]
+	predicted_confidence = pred_answers_conf[0] if pred_answers_conf is not None else 0
 
 	return (
 		images_with_boxes,
@@ -226,35 +234,52 @@ with gr.Blocks() as demo:
 
 if __name__ == "__main__":
 	print("Starting...")
+	# args = {
+	# 	"use_RAG": True,
+	# 	"model": "RAGVT5",
+	# 	"dataset": "MP-DocVQA",
+	# 	"embed_model": "BGE",
+	# 	"reranker_model": "BGE",
+	# 	"page_retrieval": "Concat",
+	# 	"add_sep_token": False,
+	# 	"batch_size": 1,
+	# 	"layout_batch_size": 4,
+	# 	"chunk_num": 20,
+	# 	"chunk_size": 60,
+	# 	"chunk_size_tol": 0.2,
+	# 	"overlap": 10,
+	# 	"include_surroundings": 0,
+	# 	"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+	# 	"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
+	# 	"reorder_chunks": False,
+	# 	"reranker_weights": "BAAI/bge-reranker-v2-m3",
+	# 	"rerank_filter_tresh": 0,
+	# 	"rerank_max_chunk_num": 10,
+	# 	"rerank_min_chunk_num": 1
+	# }
 	args = {
 		"use_RAG": True,
-		"model": "RAGVT5",
-		"dataset": "MP-DocVQA",
-		"embed_model": "BGE",
-		"reranker_model": "BGE",
-		"page_retrieval": "Concat",
-		"add_sep_token": False,
+		"model": "RAGPix2Struct",
+		"layout_model": "DIT",
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
 		"batch_size": 1,
 		"layout_batch_size": 4,
-		"chunk_num": 20,
-		"chunk_size": 60,
-		"chunk_size_tol": 0.2,
-		"overlap": 10,
-		"include_surroundings": 0,
-		"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
-		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
-		"reorder_chunks": False,
-		"reranker_weights": "BAAI/bge-reranker-v2-m3",
-		"rerank_filter_tresh": 0,
-		"rerank_max_chunk_num": 10,
-		"rerank_min_chunk_num": 1
+		"embedder_batch_size": 16,
+		"use_precomputed_layouts": False,
+		"use_layout_labels": True,
+		"chunk_mode": "horizontal",
+		"chunk_num": 5,
+		"include_surroundings": (0,0),
+		"model_weights": "google/pix2struct-docvqa-base",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection"
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
+		"device": "cuda:3",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,
-		"log_wandb": True,
+		"log_wandb": False,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,

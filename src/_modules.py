@@ -1216,18 +1216,69 @@ class ImageChunker:
 	def crop_boxes(
 			self,
 			image: Image.Image,
-			boxes: List[list]
-	):
+			boxes: List[list],
+			labels: List[int],
+			clusters: Optional[List[int]] = None
+	) -> Tuple[List[Image.Image], List[int]]:
 		crops = []
-		for i in range(len(boxes)):
-			box = boxes[i].copy()
+		clustered_boxes = []
+		clustered_labels = []
+		
+		if clusters is None:
+			clustered_boxes = boxes
+			clustered_labels = labels
+		else:
+			# Group boxes by cluster. Redefines box coordinates so that all fit
+			box_clusters = {}
+			label_clusters = {}
+			print(f"Boxes: {boxes}")
+			print(f"Labels: {labels}")
+			print(f"Clusters: {clusters}")
+			for i, (box, label, cluster) in enumerate(zip(boxes, labels, clusters)):
+				if cluster == -1:
+					clustered_boxes.append(box)  
+					clustered_labels.append(label)
+				else:
+					if cluster not in box_clusters:
+						box_clusters[cluster] = []
+						label_clusters[cluster] = []
+					box_clusters[cluster].append(boxes[i])
+					label_clusters[cluster].append(labels[i])
+					print(f"Appending box {box} to cluster {cluster}")
+			
+			for cluster in box_clusters.keys():
+				min_x = min([box[0] for box in box_clusters[cluster]])
+				min_y = min([box[1] for box in box_clusters[cluster]])
+				max_x = max([box[2] for box in box_clusters[cluster]])
+				max_y = max([box[3] for box in box_clusters[cluster]])
+				clustered_boxes.append([min_x, min_y, max_x, max_y])
+				
+				# Take label with largest total area in cluster
+				cluster_labels = label_clusters[cluster]
+				label_areas = {}
+				for label in set(cluster_labels):
+					# Sum areas of all boxes with this label
+					total_area = sum([
+						(box[2] - box[0]) * (box[3] - box[1])  # width * height
+						for box, l in zip(box_clusters[cluster], cluster_labels) 
+						if l == label
+					])
+					label_areas[label] = total_area
+				most_common_label = max(label_areas.items(), key=lambda x: x[1])[0]  
+				clustered_labels.append(most_common_label)
+				
+				print(f"Cluster {cluster}: box {clustered_boxes[-1]}, label {most_common_label}")
+
+		for box in clustered_boxes:
+			box = box.copy()
 			box[0] = int(box[0] * image.width)
-			box[1] = int(box[1] * image.height)
+			box[1] = int(box[1] * image.height) 
 			box[2] = int(box[2] * image.width)
 			box[3] = int(box[3] * image.height)
 			cropped_image = image.crop(box)
 			crops.append(cropped_image)
-		return crops
+
+		return crops, clustered_labels
 	
 	def get_chunks(
 			self,
@@ -1244,11 +1295,13 @@ class ImageChunker:
 		layout_boxes = None
 		layout_labels = None
 		layout_clusters = None
+		print(layout_info)
 		if layout_info != [[]]:
 			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes, 4)
 			layout_labels = [[layout_info[b][p]["labels"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
 			if "clusters" in layout_info[0][0].keys() and self.cluster_layouts:
 				layout_clusters = [[layout_info[b][p]["clusters"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
+		print(layout_clusters, self.cluster_layouts)
 
 		patches_flatten = []
 		patches_flatten_indices = []
@@ -1269,34 +1322,42 @@ class ImageChunker:
 			for p in range(len(batch_layout_boxes)):
 				if batch_layout_boxes is None or len(batch_layout_boxes[p]) == 0:
 					# If no layout, make chunks inside the page
-					pass
+					raise NotImplementedError()
 				else:
 					# Else, if layout, make chunks inside the layout boxes
 					page_layout_boxes = batch_layout_boxes[p]
 					page_layout_labels = batch_layout_labels[p]
 					if batch_layout_clusters:
 						page_layout_clusters = batch_layout_clusters[p].tolist() # (n_layouts,)
+						# Sort layout boxes left-right and top-bottom
+						sorted_tuples = sorted(
+							zip(page_layout_boxes, page_layout_labels, page_layout_clusters),
+							key=lambda x: (x[0][0], x[0][1])
+						)
+						page_layout_boxes, page_layout_labels, page_layout_clusters = map(list, zip(*sorted_tuples))
 					else:
 						page_layout_clusters = None
-					# Sort layout boxes left-right and top-bottom
-					sorted_tuples = sorted(
-						zip(page_layout_boxes, page_layout_labels),
-						key=lambda x: (x[0][0], x[0][1])
-					)
-					page_layout_boxes, page_layout_labels = map(list, zip(*sorted_tuples))
+						# Sort layout boxes left-right and top-bottom
+						sorted_tuples = sorted(
+							zip(page_layout_boxes, page_layout_labels),
+							key=lambda x: (x[0][0], x[0][1])
+						)
+						page_layout_boxes, page_layout_labels = map(list, zip(*sorted_tuples))
 					# Crop boxes in the image
-					page_cropped_layouts = self.crop_boxes(images[b][p], page_layout_boxes)
+					page_cropped_layout_boxes, page_cropped_layout_labels = self.crop_boxes(
+						images[b][p], page_layout_boxes, page_layout_labels, page_layout_clusters
+					)
 					# Divide the cropped boxes into patches
-					for i in range(len(page_layout_boxes)):
+					for i in range(len(page_cropped_layout_boxes)):
 						# if layout label = 1, divide, else keep the whole box
-						if page_layout_labels[i] == 1:
-							box_patches, box_patches_matrix = self.divide_image_into_patches(page_cropped_layouts[i])
+						if page_cropped_layout_labels[i] == 1:
+							box_patches, box_patches_matrix = self.divide_image_into_patches(page_cropped_layout_boxes[i])
 							if len(box_patches) == 0: # box was probably too small
 								continue
 						else:
 							# for images and tables do not divide
-							box_patches = [page_cropped_layouts[i]]
-							box_patches_matrix = np.array([[page_cropped_layouts[i]]])
+							box_patches = [page_cropped_layout_boxes[i]]
+							box_patches_matrix = np.array([[page_cropped_layout_boxes[i]]])
 						batch_patches_flatten.extend(box_patches)
 						batch_patches_flatten_indices.extend([patch_count] * len(box_patches))
 						batch_patches_matrix_list.append(box_patches_matrix)
@@ -1595,46 +1656,63 @@ class S2Chunker:
 	def create_nodes_and_edges(
 			self,
 			page_layout_info: Dict,
-			page_info: Dict
+			page_info: Optional[Dict] = None
 	) -> Tuple[List[Dict], List[Tuple]]:
 		page_layout_boxes = page_layout_info["boxes"]
 		page_layout_labels = page_layout_info["labels"]
-		page_words = page_info["ocr_tokens"]
-		page_boxes = page_info["ocr_normalized_boxes"]
-
-		layout_words_text = []
-		layout_words_boxes = []
-		for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
-			# Find words inside the layout box
-			words_inside = []
-			boxes_inside = []
-			for i, (word, box) in enumerate(zip(page_words, page_boxes)):
-				contain_ratio = containment_ratio(box, layout_box)
-				if isinstance(box, np.ndarray):
-					box = box.tolist()
-				if contain_ratio > 0.5:
-					words_inside.append(word)
-					boxes_inside.append(box)
-			layout_words_text.append(words_inside)
-			layout_words_boxes.append(boxes_inside)
 
 		nodes = []
 		edges = []
 		used = np.zeros(len(page_layout_boxes), dtype=bool)
 		i = 0
-		for l, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):  # noqa: E741
-			if not layout_words_text[l]:
-				continue
-			node = {
-				"global_id": i,
-				"page": 1,
-				"bbox": layout_box,
-				"text": " ".join(layout_words_text[l]),
-				"label": layout_label,
-			}
-			nodes.append(node)
-			i += 1
-			used[l] = True
+
+		# If in spatial mode or no page_info, just use layout boxes
+		if self.cluster_mode == "spatial" or page_info is None:
+			for l, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
+				node = {
+					"global_id": i,
+					"page": 1,
+					"bbox": layout_box,
+					"text": "",  # Empty text for spatial-only
+					"label": layout_label,
+				}
+				nodes.append(node)
+				i += 1
+				used[l] = True
+		else:
+			# Original logic for spatial+semantic mode
+			page_words = page_info["ocr_tokens"]
+			page_boxes = page_info["ocr_normalized_boxes"]
+
+			layout_words_text = []
+			layout_words_boxes = []
+			for lb, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
+				# Find words inside the layout box
+				words_inside = []
+				boxes_inside = []
+				for i, (word, box) in enumerate(zip(page_words, page_boxes)):
+					contain_ratio = containment_ratio(box, layout_box)
+					if isinstance(box, np.ndarray):
+						box = box.tolist()
+					if contain_ratio > 0.5:
+						words_inside.append(word)
+						boxes_inside.append(box)
+				layout_words_text.append(words_inside)
+				layout_words_boxes.append(boxes_inside)
+
+			for l, (layout_box, layout_label) in enumerate(zip(page_layout_boxes, page_layout_labels)):
+				if not layout_words_text[l]:
+					continue
+				node = {
+					"global_id": i,
+					"page": 1,
+					"bbox": layout_box,
+					"text": " ".join(layout_words_text[l]),
+					"label": layout_label,
+				}
+				nodes.append(node)
+				i += 1
+				used[l] = True
 
 		# Add edges between all nodes
 		for i in range(len(nodes)):
@@ -1820,21 +1898,23 @@ class S2Chunker:
 	def forward(
 			self,
 			layout_info: List[Dict],
-			pages_info: List[Dict]
+			pages_info: Optional[List[Dict]] = None
 	) -> List[Dict]:
 		batch_clusters = []
-		for p, (page_layout_info, page_info) in enumerate(zip(layout_info, pages_info)):
+		for p, page_layout_info in enumerate(layout_info):
 			try:
 				if len(page_layout_info["boxes"]) == 0:
 					batch_clusters.append(np.array([]))
 					continue
-				if page_info is None:
-					batch_clusters.append(np.full(len(page_layout_info["boxes"]), -1))
-					continue
+					
+				# Get corresponding page_info or None for spatial-only mode
+				page_info = pages_info[p] if pages_info is not None else None
+				
 				nodes, edges, used = self.create_nodes_and_edges(page_layout_info, page_info)
 				if len(nodes) < 2:
 					batch_clusters.append(np.full(len(page_layout_info["boxes"]), -1))
 					continue
+					
 				clusters = self.cluster(nodes, edges)
 				clusters = sorted(clusters.items(), key=lambda item: item[0])
 				clusters = [x[1] for x in clusters]
@@ -1844,7 +1924,8 @@ class S2Chunker:
 			except Exception as e:
 				print("p: ", p)
 				print("page_layout_info:", page_layout_info)
-				print("page_info:", page_info)
+				if pages_info is not None:
+					print("page_info:", pages_info[p])
 				raise e
 		return batch_clusters
 

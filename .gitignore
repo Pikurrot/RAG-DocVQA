@@ -173,3 +173,4 @@ temp_data
 wandb/
 temp*
 *.ttf
+.gradio

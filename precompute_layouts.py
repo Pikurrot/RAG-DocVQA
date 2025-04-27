@@ -3,6 +3,7 @@ import argparse
 import numpy as np
 import torch.multiprocessing as mp
 import json
+import torch
 from tqdm import tqdm
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, Subset
@@ -24,8 +25,9 @@ class ImageDataset(Dataset):
 			for f in os.listdir(self.image_path)
 			if f.lower().endswith((".png", ".jpg", ".jpeg"))
 		]
+		# know image extension
 		self.image_files = [
-			os.path.join(self.image_path, f"{basename}.jpg")
+			os.path.join(self.image_path, f"{basename}.jpeg")
 			for basename in basenames
 		]
 		if use_ocr:
@@ -114,21 +116,22 @@ def main():
 		"model": "RAGVT5",
 		"embed_model": "BGE",
 		"layout_model": "DIT", # YOLO, DIT
-		"dataset": "MP-DocVQA",
-		"batch_size": 10,
-		"layout_batch_size": 10,
+		"dataset": "Infographics",
+		"batch_size": 5,
+		"layout_batch_size": 5,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
-		"embed_weights": "/data3fast/users/elopez/models/bge-finetuned-2/checkpoint-820",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_layout_labels": "Embed",
+		"use_layout_labels": "Default",
 		"cluster_layouts": True,
-		"cluster_mode": "spatial+semantic", # spatial, spatial+semantic
+		"cluster_mode": "spatial", # spatial, spatial+semantic
 		"calculate_n_clusters": "best", # heuristic, best
-		"output_dir": "/data3fast/users/elopez/data",
+		"output_dir": "/data/users/elopez/infographics",
 	}
 	extra_args = {
-		"visible_devices": "0,1,2,3,4",
+		"visible_devices": "1",
+		"device": "cuda:1",
 		"data_size": 1.0,
 		"compute_stats": False,
 		"compute_stats_examples": False,
@@ -144,7 +147,8 @@ def main():
 	visible_devices = [int(x) for x in config["visible_devices"].split(",")]
 	num_gpus = len(visible_devices)
 	
-	mp.spawn(worker_process, args=(num_gpus, config, shared_dict), nprocs=num_gpus, join=True)
+	with torch.no_grad():
+		mp.spawn(worker_process, args=(num_gpus, config, shared_dict), nprocs=num_gpus, join=True)
 	
 	# After all workers finish, convert the shared dict to a regular dict and save
 	aggregated_results = dict(shared_dict)

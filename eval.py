@@ -248,8 +248,8 @@ def evaluate(
 					return_retrieval=True
 				)
 				pred_answer_pages = retrieval.get("page_indices")
-		except Exception as e:
-			print(f"Error during inference: {e}")
+		except torch.OutOfMemoryError:
+			print("Out of memory warning. Skipping batch.")
 			pred_answers = None
 			pred_answer_pages = None
 			pred_answers_conf = None
@@ -343,7 +343,7 @@ def evaluate(
 		# 		max_len = len(examples[max_key])
 		# 		print(f"Batch {b}: Stat examples key '{key}', max length key: '{max_key}' with {max_len} examples")
 
-		if retrieval and "stats" in retrieval:
+		if retrieval:
 			del retrieval["stats"]["layout_time"]
 			if b == 0:
 				retrieval_stats = retrieval["stats"]
@@ -451,8 +451,8 @@ if __name__ == "__main__":
 		"use_RAG": True,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
-		"batch_size": 16,
+		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
+		"batch_size": 8,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
 		"use_precomputed_layouts": False,
@@ -465,9 +465,9 @@ if __name__ == "__main__":
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:2",
+		"device": "cuda:1",
 		"save_folder": "21-pix2struct",
-		"save_name_append": "rag-infographics",
+		"save_name_append": "rag-mpdocvqa",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

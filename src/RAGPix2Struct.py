@@ -156,6 +156,8 @@ class RAGPix2Struct(torch.nn.Module):
 		if return_steps:
 			steps = {
 				"layout_info": layout_info, # (bs, n_pages)
+				"layout_segments": layout_steps["layout_segments"], # (bs, n_pages)
+				"layout_info_raw": layout_steps["layout_info_raw"] # (bs, n_pages)
 			}
 			steps.update(layout_steps)
 		else:

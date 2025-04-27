@@ -1231,9 +1231,6 @@ class ImageChunker:
 			# Group boxes by cluster. Redefines box coordinates so that all fit
 			box_clusters = {}
 			label_clusters = {}
-			print(f"Boxes: {boxes}")
-			print(f"Labels: {labels}")
-			print(f"Clusters: {clusters}")
 			for i, (box, label, cluster) in enumerate(zip(boxes, labels, clusters)):
 				if cluster == -1:
 					clustered_boxes.append(box)  
@@ -1244,7 +1241,6 @@ class ImageChunker:
 						label_clusters[cluster] = []
 					box_clusters[cluster].append(boxes[i])
 					label_clusters[cluster].append(labels[i])
-					print(f"Appending box {box} to cluster {cluster}")
 			
 			for cluster in box_clusters.keys():
 				min_x = min([box[0] for box in box_clusters[cluster]])
@@ -1266,8 +1262,6 @@ class ImageChunker:
 					label_areas[label] = total_area
 				most_common_label = max(label_areas.items(), key=lambda x: x[1])[0]  
 				clustered_labels.append(most_common_label)
-				
-				print(f"Cluster {cluster}: box {clustered_boxes[-1]}, label {most_common_label}")
 
 		for box in clustered_boxes:
 			box = box.copy()
@@ -1295,13 +1289,11 @@ class ImageChunker:
 		layout_boxes = None
 		layout_labels = None
 		layout_clusters = None
-		print(layout_info)
 		if layout_info != [[]]:
 			layout_boxes = [[layout_info[b][p]["boxes"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes, 4)
 			layout_labels = [[layout_info[b][p]["labels"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
 			if "clusters" in layout_info[0][0].keys() and self.cluster_layouts:
 				layout_clusters = [[layout_info[b][p]["clusters"] for p in range(len(layout_info[b]))] for b in range(bs)] # (bs, n_pages, n_boxes)
-		print(layout_clusters, self.cluster_layouts)
 
 		patches_flatten = []
 		patches_flatten_indices = []
@@ -1322,7 +1314,13 @@ class ImageChunker:
 			for p in range(len(batch_layout_boxes)):
 				if batch_layout_boxes is None or len(batch_layout_boxes[p]) == 0:
 					# If no layout, make chunks inside the page
-					raise NotImplementedError()
+					box_patches, box_patches_matrix = self.divide_image_into_patches(images[b][p])
+					if len(box_patches) == 0:
+						continue
+					batch_patches_flatten.extend(box_patches)
+					batch_patches_flatten_indices.extend([patch_count] * len(box_patches))
+					batch_patches_matrix_list.append(box_patches_matrix)
+					patch_count += 1
 				else:
 					# Else, if layout, make chunks inside the layout boxes
 					page_layout_boxes = batch_layout_boxes[p]

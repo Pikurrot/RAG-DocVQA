@@ -1,6 +1,7 @@
 import os
 import random
 import json
+import numpy as np
 from PIL import Image
 from typing import Any, List, Tuple, Dict
 from torch.utils.data import Dataset
@@ -32,6 +33,11 @@ class Infographics(Dataset):
 		self.use_images = config.get("use_images", False)
 		self.get_raw_ocr_data = config.get("get_raw_ocr_data", False)
 		self.max_pages = config.get("max_pages", 1)
+
+		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
+		if self.use_precomputed_layouts:
+			layouts_file = config["precomputed_layouts_path"]
+			self.layout_info = np.load(layouts_file, allow_pickle=True)
 
 	def __len__(self):
 		return len(self.qas_data)
@@ -76,6 +82,9 @@ class Infographics(Dataset):
 		if self.use_images:
 			image_names = [os.path.join(self.images_dir, record["image_local_name"])]
 			images = [Image.open(image_names[0]).convert("RGB")]
+			if self.use_precomputed_layouts:
+				img_name = os.path.splitext(record["image_local_name"])[0]
+				layouts = [self.layout_info[img_name].item()]
 
 		def get_box(polygon):
 			box = [
@@ -113,6 +122,8 @@ class Infographics(Dataset):
 		if self.use_images:
 			sample_info["image_names"] = image_names
 			sample_info["images"] = images
+			if self.use_precomputed_layouts:
+				sample_info["layouts"] = layouts
 
 		if self.get_raw_ocr_data:
 			sample_info["words"] = words

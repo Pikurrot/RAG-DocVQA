@@ -169,6 +169,22 @@ if __name__ == "__main__":
 		"train_spatial_embedding": True,
 		"train_visual_embedding": True
 	}
+	args = {
+		"use_RAG": True,
+		"model": "RAGPix2Struct",
+		"layout_model": "DIT",
+		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
+		"batch_size": 8,
+		"layout_batch_size": 4,
+		"embedder_batch_size": 16,
+		"use_precomputed_layouts": False,
+		"use_layout_labels": True,
+		"chunk_mode": "horizontal",
+		"chunk_num": 5,
+		"include_surroundings": (0,0),
+		"model_weights": "google/pix2struct-docvqa-base",
+		"layout_model_weights": "cmarkea/dit-base-layout-detection"
+	}
 	extra_args = {
 		"visible_devices": "4",
 		"save_folder": "20-mpdocvqa",

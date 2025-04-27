@@ -261,11 +261,10 @@ if __name__ == "__main__":
 		"use_RAG": True,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
 		"batch_size": 1,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
-		"use_precomputed_layouts": False,
 		"use_layout_labels": True,
 		"chunk_mode": "horizontal",
 		"chunk_num": 5,
@@ -273,7 +272,7 @@ if __name__ == "__main__":
 		"model_weights": "google/pix2struct-docvqa-base",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		"precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial",
 		"calculate_n_clusters": "best"

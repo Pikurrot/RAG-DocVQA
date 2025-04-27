@@ -6,7 +6,7 @@ checkpoint_dir: /data/users/elopez/checkpoints
 device: cuda
 
 training_parameters:
-  lr: 2e-4
+  lr: 5e-4
   batch_size: 4
-  train_epochs: 4
+  train_epochs: 1
   warmup_iterations: 1000

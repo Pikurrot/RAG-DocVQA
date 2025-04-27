@@ -210,9 +210,26 @@ class RAGPix2Struct(torch.nn.Module):
 					inputs_flat[key] = torch.cat((inputs_flat[key], value), dim=0)
 		inputs_flat = BatchFeature(data=inputs_flat, tensor_type="pt").to(self.device)
 
+		if "answers" in batch and self.training:
+			# Take first answer as target
+			target_texts = [answers[0] for answers in batch["answers"]]
+			# Tokenize targets
+			with self.processor.tokenizer.as_target_tokenizer():
+				targets = self.processor.tokenizer(
+					target_texts,
+					padding=True,
+					return_tensors="pt",
+					truncation=True
+				).to(self.device)
+			# Add labels to inputs
+			inputs_flat["labels"] = targets["input_ids"]
+
+		# Forward pass through the model
+		outputs = self.generator(**inputs_flat)
+
 		output_ids = self.generator.generate(**inputs_flat)
 		pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
-		result = (None, pred_answer, None, None)
+		result = (outputs, pred_answer, None, None)
 
 		if return_retrieval:
 			retrieval = {

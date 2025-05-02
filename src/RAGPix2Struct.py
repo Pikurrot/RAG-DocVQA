@@ -13,6 +13,7 @@ from transformers import Pix2StructForConditionalGeneration, Pix2StructProcessor
 from transformers.models.pix2struct.image_processing_pix2struct import render_text
 from transformers.image_processing_base import BatchFeature
 from src.custom_pix2struct_processor import CustomPix2StructProcessor, CustomPix2StructImageProcessor
+from src._model_utils import get_generative_confidence
 from PIL import Image
 
 class RAGPix2Struct(torch.nn.Module):
@@ -188,46 +189,70 @@ class RAGPix2Struct(torch.nn.Module):
 			steps = {"layout_info": [[]], "layout_segments": [[]], "layout_info_raw": [[]]}
 		top_k_layout_labels = [[1] * len(patches) for patches in top_k_patches]
 
-		bs = len(top_k_patches)
 		# Generate
-		inputs = []
-		for b in range(bs):
-			question = batch["questions"][b]
-			prompt = question# + " Provide the answer in few words"
-			input_patches = top_k_patches[b]
-			if len(input_patches) == 0:
-				# input_patches = [Image.fromarray(np.random.randint(0,255,size=(2,2,3), dtype=np.uint8))]
+		bs = len(top_k_patches)
+		if self.use_RAG:
+			inputs = []
+			for b in range(bs):
+				question = batch["questions"][b]
+				prompt = question# + " Provide the answer in few words"
+				input_patches = top_k_patches[b]
+				if len(input_patches) == 0:
+					# input_patches = [Image.fromarray(np.random.randint(0,255,size=(2,2,3), dtype=np.uint8))]
+					input_patches = batch["images"][b]
+				batch_inputs = self.processor(images=input_patches, text=prompt)
+				batch_inputs = {key:torch.from_numpy(value).to(self.device).unsqueeze(0) for key, value in batch_inputs.items() if key in ("flattened_patches", "attention_mask")}
+				inputs.append(batch_inputs)
+
+			if "answers" in batch and self.training:
+				# Take first answer as target
+				target_texts = [answers[0] for answers in batch["answers"]]
+				# Tokenize targets
+				with self.processor.tokenizer.as_target_tokenizer():
+					targets = self.processor.tokenizer(
+						target_texts,
+						padding=True,
+						return_tensors="pt",
+						truncation=True
+					).to(self.device)
+				# Add labels to inputs
+				inputs_flat["labels"] = targets["input_ids"]
+
+				# Forward pass through the model
+				outputs = self.generator(**inputs_flat)
+			else:
+				outputs = None
+
+			inputs_flat = {}
+			for inputs_dict in inputs:
+				for key, value in inputs_dict.items():
+					if key not in inputs_flat:
+						inputs_flat[key] = value
+					else:
+						inputs_flat[key] = torch.cat((inputs_flat[key], value), dim=0)
+			inputs_flat = BatchFeature(data=inputs_flat, tensor_type="pt").to(self.device)
+
+			output_ids = self.generator.generate(**inputs_flat)
+		else:
+			# Generate for each page, then take the one with the highest confidence
+			output_ids = []
+			for b in range(bs):
+				question = batch["questions"][b]
+				prompt = question
 				input_patches = batch["images"][b]
-			batch_inputs = self.processor(images=input_patches, text=prompt)
-			batch_inputs = {key:torch.from_numpy(value).to(self.device).unsqueeze(0) for key, value in batch_inputs.items() if key in ("flattened_patches", "attention_mask")}
-			inputs.append(batch_inputs)
-		inputs_flat = {}
-		for inputs_dict in inputs:
-			for key, value in inputs_dict.items():
-				if key not in inputs_flat:
-					inputs_flat[key] = value
-				else:
-					inputs_flat[key] = torch.cat((inputs_flat[key], value), dim=0)
-		inputs_flat = BatchFeature(data=inputs_flat, tensor_type="pt").to(self.device)
+				batch_inputs = self.default_processor(images=input_patches, text=prompt, return_tensors="pt").to(self.device)
+				outputs = self.generator.generate(**batch_inputs, output_scores=True, return_dict_in_generate=True)
+				confidences = torch.tensor(get_generative_confidence(outputs))
+				best_page = torch.argmax(confidences)
+				output_ids.append(outputs.sequences[best_page])
+			# pad the output ids
+			max_length = max([len(ids) for ids in output_ids])
+			for i in range(len(output_ids)):
+				if len(output_ids[i]) < max_length:
+					output_ids[i] = torch.cat((output_ids[i], torch.full((max_length - len(output_ids[i]),), self.default_processor.tokenizer.pad_token_id).to(self.device)))
+			output_ids = torch.stack(output_ids).to(self.device)
+			outputs = None
 
-		if "answers" in batch and self.training:
-			# Take first answer as target
-			target_texts = [answers[0] for answers in batch["answers"]]
-			# Tokenize targets
-			with self.processor.tokenizer.as_target_tokenizer():
-				targets = self.processor.tokenizer(
-					target_texts,
-					padding=True,
-					return_tensors="pt",
-					truncation=True
-				).to(self.device)
-			# Add labels to inputs
-			inputs_flat["labels"] = targets["input_ids"]
-
-		# Forward pass through the model
-		outputs = self.generator(**inputs_flat)
-
-		output_ids = self.generator.generate(**inputs_flat)
 		pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
 		result = (outputs, pred_answer, None, None)
 

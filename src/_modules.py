@@ -2310,3 +2310,6 @@ class VisualRetriever:
 		similarities = self._get_similarities(patch_embeddings, question_embeddings)
 		top_k = self._get_top_k(similarities, patches_flatten_indices, patches_matrix_list)
 		return top_k
+
+
+

@@ -258,10 +258,10 @@ if __name__ == "__main__":
 	# 	"rerank_min_chunk_num": 1
 	# }
 	args = {
-		"use_RAG": True,
+		"use_RAG": False,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
+		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
 		"batch_size": 1,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
@@ -272,14 +272,14 @@ if __name__ == "__main__":
 		"model_weights": "google/pix2struct-docvqa-base",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
+		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial",
 		"calculate_n_clusters": "best"
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:1",
+		"device": "cuda:0",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,

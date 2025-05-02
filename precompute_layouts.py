@@ -27,7 +27,7 @@ class ImageDataset(Dataset):
 		]
 		# know image extension
 		self.image_files = [
-			os.path.join(self.image_path, f"{basename}.jpeg")
+			os.path.join(self.image_path, f"{basename}.png")
 			for basename in basenames
 		]
 		if use_ocr:
@@ -90,23 +90,25 @@ def precompute_layouts_aggregated(dataloader, layout_model, clusterer, config):
 def worker_process(gpu_id, num_gpus, config, shared_dict):
 	# Set the GPU for this process
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+	this_config = config.copy()
+	this_config["device"] = f"cuda:{gpu_id}"
 	
 	# Build dataset and assign every num_gpus-th image to this worker
-	dataset = ImageDataset(os.path.dirname(config["images_dir"]), use_ocr=config["cluster_layouts"])
+	dataset = ImageDataset(os.path.dirname(this_config["images_dir"]), use_ocr=this_config["cluster_layouts"])
 	indices = list(range(len(dataset)))
 	subset_indices = indices[gpu_id::num_gpus]
 	subset = Subset(dataset, subset_indices)
 	
 	dataloader = DataLoader(
 		subset,
-		batch_size=config["batch_size"],
+		batch_size=this_config["batch_size"],
 		shuffle=False,
 		collate_fn=image_lst_collate_fn
 	)
-	layout_model = LayoutModel(config)  # Loads on the chosen GPU
-	embedder = BiEncoder(config)
-	clusterer = S2Chunker(config, embedder=embedder)
-	results = precompute_layouts_aggregated(dataloader, layout_model, clusterer, config)
+	layout_model = LayoutModel(this_config)  # Loads on the chosen GPU
+	embedder = BiEncoder(this_config)
+	clusterer = S2Chunker(this_config, embedder=embedder)
+	results = precompute_layouts_aggregated(dataloader, layout_model, clusterer, this_config)
 	
 	# Update the shared dictionary with this process's results
 	shared_dict.update(results)
@@ -116,9 +118,9 @@ def main():
 		"model": "RAGVT5",
 		"embed_model": "BGE",
 		"layout_model": "DIT", # YOLO, DIT
-		"dataset": "Infographics",
-		"batch_size": 5,
-		"layout_batch_size": 5,
+		"dataset": "SP-DocVQA",
+		"batch_size": 24,
+		"layout_batch_size": 24,
 		"chunk_size": 60,
 		"chunk_size_tol": 0.2,
 		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
@@ -127,11 +129,11 @@ def main():
 		"cluster_layouts": True,
 		"cluster_mode": "spatial", # spatial, spatial+semantic
 		"calculate_n_clusters": "best", # heuristic, best
-		"output_dir": "/data/users/elopez/infographics",
+		"output_dir": "/data/users/elopez/spdocvqa",
 	}
 	extra_args = {
-		"visible_devices": "1",
-		"device": "cuda:1",
+		"visible_devices": "2,3,4",
+		"device": "cuda",
 		"data_size": 1.0,
 		"compute_stats": False,
 		"compute_stats_examples": False,
@@ -155,7 +157,7 @@ def main():
 	output_dir = config["output_dir"]
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
-	out_filename = os.path.join(output_dir, "images_layouts_dit_s2_spa_sem.npz")
+	out_filename = os.path.join(output_dir, "images_layouts_dit_s2_spa.npz")
 	np.savez_compressed(out_filename, **aggregated_results)
 	print(f"Merged layout file saved to {out_filename}")
 

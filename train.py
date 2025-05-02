@@ -41,7 +41,10 @@ def train_epoch(
 	# 	"visual_embedding": model.generator.visual_embedding,
 	# 	# "layout_embedding": model.generator.layout_embedding
 	# }
-	modules = {}
+	modules = {
+		"generator": model.generator
+	}
+	print_first_samples = config.get("print_first_samples", 0)
 
 	for batch_idx, batch in enumerate(tqdm(data_loader)):
 		gt_answers = batch["answers"]
@@ -68,6 +71,11 @@ def train_epoch(
 			lr_scheduler.step()
 			optimizer.zero_grad()
 
+			if print_first_samples > 0 and batch_idx < print_first_samples:
+				print(f"Batch {batch_idx}:")
+				print("Answers:", gt_answers)
+				print("Predicted answers:", pred_answers)
+				print("-" * 20)
 			metric = evaluator.get_metrics(gt_answers, pred_answers)
 
 			batch_acc = np.mean(metric["accuracy"])
@@ -180,7 +188,7 @@ if __name__ == "__main__":
 		"use_RAG": True,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
+		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
 		"batch_size": 4,
 		"batch_size_eval": 8,
 		"layout_batch_size": 4,
@@ -192,7 +200,7 @@ if __name__ == "__main__":
 		"model_weights": "google/pix2struct-docvqa-base",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
+		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial",
 		"calculate_n_clusters": "best"
@@ -200,8 +208,8 @@ if __name__ == "__main__":
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
 		"device": "cuda:4",
-		"save_folder": "23-pix2struct-train",
-		"save_name_append": "train_info",
+		"save_folder": "26-pix2struct-train-again",
+		"save_name_append": "train_mpdocvqa",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,
@@ -213,7 +221,8 @@ if __name__ == "__main__":
 		"save_continuously": True,
 		"compute_stats": False,
 		"compute_stats_examples": False,
-		"n_stats_examples": 0
+		"n_stats_examples": 0,
+		"print_first_samples": 10
 	}
 	args.update(extra_args)
 

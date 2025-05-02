@@ -172,6 +172,7 @@ class RAGPix2Struct(torch.nn.Module):
 	def forward(
 			self,
 			batch: dict,
+			return_pred_answer: bool = True,
 			return_retrieval: bool = True,
 			return_steps: bool = False,
 			**kwargs
@@ -204,7 +205,16 @@ class RAGPix2Struct(torch.nn.Module):
 				batch_inputs = {key:torch.from_numpy(value).to(self.device).unsqueeze(0) for key, value in batch_inputs.items() if key in ("flattened_patches", "attention_mask")}
 				inputs.append(batch_inputs)
 
-			if "answers" in batch and self.training:
+			inputs_flat = {}
+			for inputs_dict in inputs:
+				for key, value in inputs_dict.items():
+					if key not in inputs_flat:
+						inputs_flat[key] = value
+					else:
+						inputs_flat[key] = torch.cat((inputs_flat[key], value), dim=0)
+			inputs_flat = BatchFeature(data=inputs_flat, tensor_type="pt").to(self.device)
+
+			if "answers" in batch and self.train_mode:
 				# Take first answer as target
 				target_texts = [answers[0] for answers in batch["answers"]]
 				# Tokenize targets
@@ -220,19 +230,21 @@ class RAGPix2Struct(torch.nn.Module):
 
 				# Forward pass through the model
 				outputs = self.generator(**inputs_flat)
+
+				if return_pred_answer:
+					# logits = outputs.logits
+					# pred_token_ids = torch.argmax(logits, dim=-1)
+					# pred_answer = self.processor.batch_decode(pred_token_ids, skip_special_tokens=True)
+					with torch.no_grad():
+						output_ids = self.generator.generate(**inputs_flat)
+						pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
+				else:
+					pred_answer = None
 			else:
 				outputs = None
-
-			inputs_flat = {}
-			for inputs_dict in inputs:
-				for key, value in inputs_dict.items():
-					if key not in inputs_flat:
-						inputs_flat[key] = value
-					else:
-						inputs_flat[key] = torch.cat((inputs_flat[key], value), dim=0)
-			inputs_flat = BatchFeature(data=inputs_flat, tensor_type="pt").to(self.device)
-
-			output_ids = self.generator.generate(**inputs_flat)
+				with torch.no_grad():
+					output_ids = self.generator.generate(**inputs_flat)
+					pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
 		else:
 			# Generate for each page, then take the one with the highest confidence
 			output_ids = []
@@ -252,8 +264,8 @@ class RAGPix2Struct(torch.nn.Module):
 					output_ids[i] = torch.cat((output_ids[i], torch.full((max_length - len(output_ids[i]),), self.default_processor.tokenizer.pad_token_id).to(self.device)))
 			output_ids = torch.stack(output_ids).to(self.device)
 			outputs = None
+			pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
 
-		pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
 		result = (outputs, pred_answer, None, None)
 
 		if return_retrieval:

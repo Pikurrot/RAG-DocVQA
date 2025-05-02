@@ -5,6 +5,7 @@ from src.RAGPix2Struct import RAGPix2Struct
 from src.MP_DocVQA import MPDocVQA
 from src.Infographics import Infographics
 from src.DUDE import DUDE
+from src.SP_DocVQA import SPDocVQA
 from transformers import get_scheduler
 from typing import Literal, Union
 
@@ -57,4 +58,6 @@ def build_dataset(
 		dataset = Infographics(dataset_config)
 	elif config["dataset_name"].lower() == "dude":
 		dataset = DUDE(dataset_config)
+	elif config["dataset_name"].lower() == "sp-docvqa":
+		dataset = SPDocVQA(dataset_config)
 	return dataset

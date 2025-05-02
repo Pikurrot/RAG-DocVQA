@@ -261,7 +261,7 @@ if __name__ == "__main__":
 		"use_RAG": False,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
+		"dataset": "SP-DocVQA", # MP-DocVQA / Infographics / DUDE
 		"batch_size": 1,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,

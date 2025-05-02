@@ -448,10 +448,10 @@ if __name__ == "__main__":
 	# 	"rerank_min_chunk_num": 1
 	# }
 	args = {
-		"use_RAG": False,
+		"use_RAG": True,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
 		"batch_size": 8,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
@@ -459,19 +459,19 @@ if __name__ == "__main__":
 		"chunk_mode": "horizontal",
 		"chunk_num": 5,
 		"include_surroundings": (0,0),
-		"model_weights": "google/pix2struct-docvqa-base",
+		"model_weights": "google/pix2struct-infographics-vqa-base",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		"precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial",
 		"calculate_n_clusters": "best"
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:3",
-		"save_folder": "24-pix2struct-norag",
-		"save_name_append": "norag-mpdocvqa",
+		"device": "cuda:2",
+		"save_folder": "25-pix2struct-rag",
+		"save_name_append": "rag-info",
 		"val_size": 1.0,
 		"log_wandb": True,
 		"log_media_interval": 10,

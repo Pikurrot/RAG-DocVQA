@@ -2,28 +2,33 @@ import os
 import random
 from PIL import Image
 import numpy as np
-from typing import Literal, Any
+from typing import Literal, Any, Dict, List, Tuple
 from torch.utils.data import Dataset
 
 class SPDocVQA(Dataset):
 
 	def __init__(
 			self,
-			imbd_dir: str,
-			images_dir: str,
-			split: Literal["train", "val", "test"],
-			kwargs: dict = {}
+			config: dict,
 	):
-		data = np.load(os.path.join(imbd_dir, "new_imdb_{:s}.npy".format(split)), allow_pickle=True)
+		imdb_dir = config["imdb_dir"]
+		images_dir = config["images_dir"]
+		split = config["split"]
+		data = np.load(os.path.join(imdb_dir, "imdb_{:s}.npy".format(split)), allow_pickle=True)
 		self.header = data[0]
 		self.imdb = data[1:]
-		self.hierarchical_method = kwargs.get("hierarchical_method", False)
+		self.hierarchical_method = config.get("hierarchical_method", True)
 
 		self.max_answers = 2
 		self.images_dir = images_dir
 
-		self.use_images = kwargs.get("use_images", False)
-		self.get_raw_ocr_data = kwargs.get("get_raw_ocr_data", False)
+		self.use_images = config.get("use_images", False)
+		self.get_raw_ocr_data = config.get("get_raw_ocr_data", False)
+
+		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
+		if self.use_precomputed_layouts:
+			layouts_file = config["precomputed_layouts_path"]
+			self.layout_info = np.load(layouts_file, allow_pickle=True)
 
 	def __len__(self):
 		return len(self.imdb)
@@ -39,6 +44,9 @@ class SPDocVQA(Dataset):
 		if self.use_images:
 			image_name = os.path.join(self.images_dir, "{:s}.png".format(record["image_name"]))
 			image = Image.open(image_name).convert("RGB")
+			if self.use_precomputed_layouts:
+				img_name = os.path.splitext(record["image_name"])[0]
+				layouts = [self.layout_info[img_name].item()]
 
 		if self.get_raw_ocr_data:
 			words = [word.lower() for word in record["ocr_tokens"]]
@@ -63,6 +71,8 @@ class SPDocVQA(Dataset):
 		if self.use_images:
 			sample_info["image_names"] = image_name
 			sample_info["images"] = image
+			if self.use_precomputed_layouts:
+				sample_info["layouts"] = layouts
 
 		if self.get_raw_ocr_data:
 			sample_info["words"] = words

@@ -1,6 +1,7 @@
 import torch
 import gc
 import numpy as np
+import os
 from src._modules import (
 	ImageChunker,
 	ImageEncoder,
@@ -50,8 +51,12 @@ class RAGPix2Struct(torch.nn.Module):
 			self.model_path,
 			cache_dir=self.cache_dir
 		)
+		if self.model_path.endswith(".ckpt") and "preprocessor_config.json" in os.listdir(self.model_path):
+			preprocessor_path = self.model_path
+		else:
+			preprocessor_path = "google/pix2struct-docvqa-base"
 		self.default_processor = Pix2StructProcessor.from_pretrained(
-			self.model_path,
+			preprocessor_path,
 			cache_dir=self.cache_dir
 		)
 		self.image_processor = CustomPix2StructImageProcessor(
@@ -179,10 +184,11 @@ class RAGPix2Struct(torch.nn.Module):
 	) -> dict:
 		# Retrieve top k patches
 		if self.use_RAG:
-			(
-				top_k_patches,
-				steps
-			) = self.online_retrieve(batch, return_steps=return_steps)
+			with torch.no_grad():
+				(
+					top_k_patches,
+					steps
+				) = self.online_retrieve(batch, return_steps=return_steps)
 			gc.collect()
 			torch.cuda.empty_cache()
 		else:
@@ -218,15 +224,20 @@ class RAGPix2Struct(torch.nn.Module):
 				# Take first answer as target
 				target_texts = [answers[0] for answers in batch["answers"]]
 				# Tokenize targets
+				# ----- Equivalent targets ------
+				# processor = AutoProcessor.from_pretrained("google/pix2struct-base")
+				# targets = processor(text=target_texts, return_tensors="pt", padding=True, truncation=True).to(self.device)
+				# -------------------------------
 				with self.processor.tokenizer.as_target_tokenizer():
-					targets = self.processor.tokenizer(
+					labels = self.processor.tokenizer(
 						target_texts,
 						padding=True,
-						return_tensors="pt",
-						truncation=True
-					).to(self.device)
+						truncation=True,
+						return_tensors="pt"
+					)["input_ids"].to(self.device)
+					labels[labels == self.processor.tokenizer.pad_token_id] = -100
 				# Add labels to inputs
-				inputs_flat["labels"] = targets["input_ids"]
+				inputs_flat["labels"] = labels
 
 				# Forward pass through the model
 				outputs = self.generator(**inputs_flat)

@@ -209,7 +209,7 @@ if __name__ == "__main__":
 		"visible_devices": "0,1,2,3,4",
 		"device": "cuda:4",
 		"save_folder": "26-pix2struct-train-again",
-		"save_name_append": "train_mpdocvqa",
+		"save_name_append": "train_mpdocvqa_solved",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,

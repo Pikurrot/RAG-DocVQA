@@ -258,10 +258,10 @@ if __name__ == "__main__":
 	# 	"rerank_min_chunk_num": 1
 	# }
 	args = {
-		"use_RAG": False,
+		"use_RAG": True,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "SP-DocVQA", # MP-DocVQA / Infographics / DUDE
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE
 		"batch_size": 1,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
@@ -269,10 +269,10 @@ if __name__ == "__main__":
 		"chunk_mode": "horizontal",
 		"chunk_num": 5,
 		"include_surroundings": (0,0),
-		"model_weights": "google/pix2struct-docvqa-base",
+		"model_weights": "/data/users/elopez/checkpoints/ragpix2struct_concat_infographics_train_info/best.ckpt",#"google/pix2struct-docvqa-base",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		"precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial",
 		"calculate_n_clusters": "best"

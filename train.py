@@ -57,7 +57,7 @@ def train_epoch(
 			loss = outputs.loss + outputs.ret_loss if hasattr(outputs, "ret_loss") else outputs.loss
 
 			loss.backward()
-			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=30.0)
+			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
 			# Log gradients
 			grad_norms = {}
@@ -71,7 +71,7 @@ def train_epoch(
 			lr_scheduler.step()
 			optimizer.zero_grad()
 
-			if print_first_samples > 0 and batch_idx < print_first_samples:
+			if (print_first_samples > 0 and batch_idx < print_first_samples) or (print_first_samples == -1):
 				print(f"Batch {batch_idx}:")
 				print("Answers:", gt_answers)
 				print("Predicted answers:", pred_answers)
@@ -222,7 +222,7 @@ if __name__ == "__main__":
 		"compute_stats": False,
 		"compute_stats_examples": False,
 		"n_stats_examples": 0,
-		"print_first_samples": 10
+		"print_first_samples": -1
 	}
 	args.update(extra_args)
 

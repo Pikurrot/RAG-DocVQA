@@ -233,6 +233,7 @@ class RAGPix2Struct(torch.nn.Module):
 						target_texts,
 						padding=True,
 						truncation=True,
+						add_special_tokens=True,
 						return_tensors="pt"
 					)["input_ids"].to(self.device)
 					labels[labels == self.processor.tokenizer.pad_token_id] = -100

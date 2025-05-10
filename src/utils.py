@@ -451,3 +451,8 @@ def late_interaction(query, patches):
 	# Sum the max similarity across all query tokens
 	scores = torch.sum(max_sim, dim=-1) # (n,)
 	return scores
+
+def rectangles_overlap(rect1, rect2):
+	"""Check if two rectangles (x1, y1, x2, y2) overlap."""
+	return (rect1[0] < rect2[2] and rect1[2] > rect2[0] and
+			rect1[1] < rect2[3] and rect1[3] > rect2[1])

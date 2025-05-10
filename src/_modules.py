@@ -24,7 +24,7 @@ from collections import Counter
 from PIL import Image
 from time import time
 from abc import ABC, abstractmethod
-from src.utils import containment_ratio, non_maximum_suppression, late_interaction
+from src.utils import containment_ratio, non_maximum_suppression, late_interaction, rectangles_overlap
 from src._model_utils import mean_pooling
 from src.custom_pix2struct_processor import extract_flattened_patches_single
 from transformers.image_utils import infer_channel_dimension_format, to_numpy_array
@@ -1148,12 +1148,13 @@ class ImageChunker:
 			image: Image.Image,
 	):
 		patch_size = self.patch_size
-		overlap = self.overlap
+		overlap = patch_size // 2 if self.overlap else 0
 		mode = self.mode
 
 		width, height = image.size
 		patches = []
 		patches_matrix = []
+		patches_xyxy = []
 		assert mode in ["square", "horizontal"]
 
 		# Determine step size
@@ -1186,6 +1187,7 @@ class ImageChunker:
 					patch = image.crop((left, top, right, bottom))
 					patches.append(patch)
 					patches_matrix[i][j] = patch
+					patches_xyxy.append([left, top, right, bottom])
 					
 		elif mode == "horizontal":
 			# Horizontal mode - full width strips with fixed height
@@ -1194,24 +1196,46 @@ class ImageChunker:
 			# For horizontal mode, we only have one column
 			patches_matrix = [[None] for _ in range(num_patches_h)]
 			
-			for i in range(num_patches_h):
+			# Check if we need to handle a special case for the last patch
+			last_patch_height = height - (num_patches_h - 1) * step_size
+			if 0 < last_patch_height < patch_size and num_patches_h > 1:
+				# We'll create one fewer patch and extend the last one
+				actual_num_patches = num_patches_h - 1
+			else:
+				actual_num_patches = num_patches_h
+				
+			for i in range(actual_num_patches):
 				# Calculate the top-left coordinate for the patch
 				left = 0  # Always start from the left edge
-				top = i * step_size
 				
-				# Ensure the patch does not exceed the image dimensions
-				right = width  # Always extend to the right edge
-				bottom = min(top + patch_size, height)
+				if i == actual_num_patches - 1 and actual_num_patches < num_patches_h:
+					# This is the last patch and we're handling the special case
+					# Make it extend to the bottom of the image
+					top = i * step_size
+					bottom = height
+				else:
+					top = i * step_size
+					bottom = min(top + patch_size, height)
 				
-				# Adjust the starting coordinate if the patch is smaller than patch_size in height
-				if bottom - top < patch_size:
-					top = max(bottom - patch_size, 0)
-					
+				# Always use the full width
+				right = width
+				
+				# For all but the last patch in the special case, keep the standard sizing
+				if i < actual_num_patches - 1 or actual_num_patches == num_patches_h:
+					if bottom - top < patch_size:
+						top = max(bottom - patch_size, 0)
+						
 				patch = image.crop((left, top, right, bottom))
 				patches.append(patch)
 				patches_matrix[i][0] = patch
+				patches_xyxy.append([left, top, right, bottom])
+			
+			# If we reduced the number of patches, resize the matrix
+			if actual_num_patches < num_patches_h:
+				patches_matrix = patches_matrix[:actual_num_patches]
 		
-		return patches, np.array(patches_matrix)
+		# Return the patches and the matrix (without converting to numpy array)
+		return patches, patches_matrix, patches_xyxy
 
 	def crop_boxes(
 			self,
@@ -1280,9 +1304,6 @@ class ImageChunker:
 			layout_info: Optional[list] = None, # (bs, n_pages)
 			**kwargs
 	) -> tuple:
-		if layout_info is None:
-			raise NotImplementedError() # TODO
-
 		bs = len(images)
 
 		# Extract layout_boxes and layout_labels from layout_info
@@ -1298,10 +1319,12 @@ class ImageChunker:
 		patches_flatten = []
 		patches_flatten_indices = []
 		patches_matrix_list = []
+		patches_xyxy = []
 		for b in range(bs):
 			batch_patches_flatten = []
 			batch_patches_flatten_indices = []
 			batch_patches_matrix_list = []
+			batch_patches_xyxy = []
 			patch_count = 0
 			batch_layout_boxes = None
 			batch_layout_labels = None
@@ -1311,15 +1334,16 @@ class ImageChunker:
 				batch_layout_labels = layout_labels[b]
 				if layout_clusters:
 					batch_layout_clusters = layout_clusters[b]
-			for p in range(len(batch_layout_boxes)):
+			for p in range(len(images[b])):
 				if batch_layout_boxes is None or len(batch_layout_boxes[p]) == 0:
 					# If no layout, make chunks inside the page
-					box_patches, box_patches_matrix = self.divide_image_into_patches(images[b][p])
+					box_patches, box_patches_matrix, box_patches_xyxy = self.divide_image_into_patches(images[b][p])
 					if len(box_patches) == 0:
 						continue
 					batch_patches_flatten.extend(box_patches)
 					batch_patches_flatten_indices.extend([patch_count] * len(box_patches))
 					batch_patches_matrix_list.append(box_patches_matrix)
+					batch_patches_xyxy.append(box_patches_xyxy)
 					patch_count += 1
 				else:
 					# Else, if layout, make chunks inside the layout boxes
@@ -1349,21 +1373,24 @@ class ImageChunker:
 					for i in range(len(page_cropped_layout_boxes)):
 						# if layout label = 1, divide, else keep the whole box
 						if page_cropped_layout_labels[i] == 1:
-							box_patches, box_patches_matrix = self.divide_image_into_patches(page_cropped_layout_boxes[i])
+							box_patches, box_patches_matrix, box_patches_xyxy = self.divide_image_into_patches(page_cropped_layout_boxes[i])
 							if len(box_patches) == 0: # box was probably too small
 								continue
 						else:
 							# for images and tables do not divide
 							box_patches = [page_cropped_layout_boxes[i]]
 							box_patches_matrix = np.array([[page_cropped_layout_boxes[i]]])
+							box_patches_xyxy = np.array([[0, 0, page_cropped_layout_boxes[i].width, page_cropped_layout_boxes[i].height]])
 						batch_patches_flatten.extend(box_patches)
 						batch_patches_flatten_indices.extend([patch_count] * len(box_patches))
 						batch_patches_matrix_list.append(box_patches_matrix)
+						batch_patches_xyxy.append(box_patches_xyxy)
 						patch_count += 1
 			patches_flatten.append(batch_patches_flatten)
 			patches_flatten_indices.append(np.array(batch_patches_flatten_indices))
 			patches_matrix_list.append(batch_patches_matrix_list)
-		return patches_flatten, patches_flatten_indices, patches_matrix_list
+			patches_xyxy.append(batch_patches_xyxy)
+		return patches_flatten, patches_flatten_indices, patches_matrix_list, patches_xyxy
 
 
 class BaseEmbedder(ABC):
@@ -2248,11 +2275,115 @@ class VisualRetriever:
 		
 		return valid_coords
 
+	def _merge_overlapping_patches(
+			self,
+			surrounding_coords_set: list, # List of tuples (page_idx, row, col)
+			patches_matrix_list: list, # (bs, n_patches, h, w)
+			patches_xyxy: list, # (bs, n_patches, 4)
+			images: List[Image.Image] # (bs,) PIL images
+	) -> list:
+		"""
+		Create non-overlapping patches by merging overlapping ones.
+		
+		Args:
+			surrounding_coords_set: List of tuples (page_idx, row, col)
+			patches_matrix_list: List of 2D matrices of patches (PIL images)
+			patches_xyxy: List of lists containing patch coordinates [x1, y1, x2, y2]
+			images: List of PIL images, each representing a page
+			
+		Returns:
+			List of non-overlapping PIL Image patches
+		"""
+		# Group patches by page
+		patches_by_page = {}
+		for page_idx, row, col in surrounding_coords_set:
+			if page_idx not in patches_by_page:
+				patches_by_page[page_idx] = []
+			
+			# Make sure the indices are valid
+			if (0 <= row < len(patches_matrix_list[page_idx]) and 
+				0 <= col < len(patches_matrix_list[page_idx][0])):
+				# Get the patch coordinates
+				try:
+					patch_xyxy = patches_xyxy[page_idx][row]
+					# Check if patch_xyxy is actually a list of coordinates
+					if isinstance(patch_xyxy, list) and len(patch_xyxy) == 4:
+						patches_by_page[page_idx].append((patch_xyxy, (row, col)))
+					else:
+						# Try to find the correct format
+						if isinstance(patches_xyxy[page_idx], list):
+							# Try different access patterns
+							if col < len(patches_xyxy[page_idx]):
+								patch_xyxy = patches_xyxy[page_idx][col]
+								if isinstance(patch_xyxy, list) and len(patch_xyxy) == 4:
+									patches_by_page[page_idx].append((patch_xyxy, (row, col)))
+				except (IndexError, TypeError) as e:
+					print(f"Error accessing patches_xyxy[{page_idx}][{row}][{col}]: {e}")
+					print(f"Shape of patches_xyxy[{page_idx}]: {len(patches_xyxy[page_idx])}")
+					continue
+		
+		# Process each page separately
+		merged_patches = []
+		
+		for page_idx, patches in patches_by_page.items():
+			if not patches:
+				continue
+				
+			# Build graph where nodes are patches and edges connect overlapping patches
+			graph = {}
+			for i in range(len(patches)):
+				graph[i] = []
+				xyxy_i, _ = patches[i]
+				for j in range(len(patches)):
+					if i != j:
+						xyxy_j, _ = patches[j]
+						if rectangles_overlap(xyxy_i, xyxy_j):
+							graph[i].append(j)
+			
+			# Find connected components (clusters of overlapping patches)
+			visited = [False] * len(patches)
+			clusters = []
+			
+			for i in range(len(patches)):
+				if not visited[i]:
+					# Start a new cluster
+					cluster = []
+					queue = [i]
+					visited[i] = True
+					
+					while queue:
+						node = queue.pop(0)
+						cluster.append(patches[node])
+						
+						for neighbor in graph[node]:
+							if not visited[neighbor]:
+								visited[neighbor] = True
+								queue.append(neighbor)
+					
+					clusters.append(cluster)
+			
+			# Create a merged patch for each cluster
+			for cluster in clusters:
+				# Find the bounding box that encompasses all patches in the cluster
+				xyxy_list = [xyxy for xyxy, _ in cluster]
+				min_x = min(xyxy[0] for xyxy in xyxy_list)
+				min_y = min(xyxy[1] for xyxy in xyxy_list)
+				max_x = max(xyxy[2] for xyxy in xyxy_list)
+				max_y = max(xyxy[3] for xyxy in xyxy_list)
+				
+				# Crop this region from the original page image
+				crop = images[page_idx].crop((min_x, min_y, max_x, max_y))
+				merged_patches.append(crop)
+		
+		return merged_patches
+
 	def _get_top_k(
 			self,
 			similarities: List[torch.Tensor], # (bs, n_patches)
 			patches_flatten_indices: list, # (bs, n_patches)
 			patches_matrix_list: list, # (bs, n_patches, h, w)
+			patches_xyxy: list, # (bs, n_patches, 4)
+			images: List[List[Image.Image]] # (bs, n_pages)
 	):
 		bs = len(similarities)
 		surrounding_patches_list = [] # (bs, k) PIL images
@@ -2261,6 +2392,7 @@ class VisualRetriever:
 		for b in range(bs):
 			batch_patch_coords = [] # (k, 3)
 			batch_patches_flatten_indices = patches_flatten_indices[b] # (n_patches,)
+			batch_patches_xyxy = patches_xyxy[b] # (n_patches, 4)
 			if len(batch_patches_flatten_indices) == 0:
 				surrounding_patches_list.append([])
 				continue
@@ -2278,23 +2410,29 @@ class VisualRetriever:
 					batch_patch_coords.append((page_idx, row, col))
 		
 			# Include surrounding patches
-			include_surroundings = (0,0)
 			surrounding_coords_set = set()
 			for coord in batch_patch_coords:
 				page_idx, row, col = coord
 				patches_matrix = batch_patches_matrix_list[page_idx]
-				surrounding_coords = self._get_surrounding_patches((row, col), patches_matrix, include_surroundings)
+				surrounding_coords = self._get_surrounding_patches((row, col), patches_matrix, self.include_surroundings)
 				surrounding_coords = [(page_idx, r, c) for r, c in surrounding_coords]
 				surrounding_coords_set.update(surrounding_coords)
 			surrounding_coords_set = list(surrounding_coords_set)
 
-			batch_surrounding_patches_list = []
-			for coord in surrounding_coords_set:
-				page_idx, row, col = coord
-				patches_matrix = batch_patches_matrix_list[page_idx]
-				if 0 <= row < len(patches_matrix) and 0 <= col < len(patches_matrix[0]):
-					batch_surrounding_patches_list.append(patches_matrix[row][col])
-			batch_surrounding_patches_list = [Image.fromarray(patch) for patch in batch_surrounding_patches_list]
+			# batch_surrounding_patches_list = []
+			# for coord in surrounding_coords_set:
+			# 	page_idx, row, col = coord
+			# 	patches_matrix = batch_patches_matrix_list[page_idx]
+			# 	if 0 <= row < len(patches_matrix) and 0 <= col < len(patches_matrix[0]):
+			# 		batch_surrounding_patches_list.append(patches_matrix[row][col])
+			# batch_surrounding_patches_list = [Image.fromarray(patch) for patch in batch_surrounding_patches_list]
+			batch_surrounding_patches_list = self._merge_overlapping_patches(
+				surrounding_coords_set,
+				batch_patches_matrix_list,
+				batch_patches_xyxy,
+				images[b]
+			)
+			
 			surrounding_patches_list.append(batch_surrounding_patches_list)
 
 		return surrounding_patches_list			
@@ -2305,11 +2443,10 @@ class VisualRetriever:
 			patch_embeddings: List[torch.Tensor], # (bs, n_patches, seq_len, dim)
 			question_embeddings: torch.Tensor, # (bs, seq_len, hidden_size)
 			patches_flatten_indices: list, # (bs, n_patches)
-			patches_matrix_list: list # (bs, n_patches, h, w)
+			patches_matrix_list: list, # (bs, n_patches, h, w)
+			patches_xyxy: list, # (bs, n_patches, 4)
+			images: List[List[Image.Image]] # (bs, n_pages)
 	) -> tuple:
 		similarities = self._get_similarities(patch_embeddings, question_embeddings)
-		top_k = self._get_top_k(similarities, patches_flatten_indices, patches_matrix_list)
+		top_k = self._get_top_k(similarities, patches_flatten_indices, patches_matrix_list, patches_xyxy, images)
 		return top_k
-
-
-

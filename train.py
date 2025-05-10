@@ -57,7 +57,7 @@ def train_epoch(
 			loss = outputs.loss + outputs.ret_loss if hasattr(outputs, "ret_loss") else outputs.loss
 
 			loss.backward()
-			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=3.0)
 
 			# Log gradients
 			grad_norms = {}
@@ -188,7 +188,7 @@ if __name__ == "__main__":
 		"use_RAG": True,
 		"model": "RAGPix2Struct",
 		"layout_model": "DIT",
-		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
 		"batch_size": 4,
 		"batch_size_eval": 8,
 		"layout_batch_size": 4,
@@ -200,16 +200,16 @@ if __name__ == "__main__":
 		"model_weights": "google/pix2struct-docvqa-base",
 		"layout_model_weights": "cmarkea/dit-base-layout-detection",
 		"use_precomputed_layouts": True,
-		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		"precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
 		"cluster_layouts": True,
 		"cluster_mode": "spatial",
 		"calculate_n_clusters": "best"
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:4",
+		"device": "cuda:3",
 		"save_folder": "26-pix2struct-train-again",
-		"save_name_append": "train_mpdocvqa_solved",
+		"save_name_append": "rag-info_solved_now_yes",
 		"eval_start": False,
 		"train_size": 1.0,
 		"val_size": 1.0,

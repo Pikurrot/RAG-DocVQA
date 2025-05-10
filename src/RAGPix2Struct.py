@@ -134,7 +134,8 @@ class RAGPix2Struct(torch.nn.Module):
 		(
 			patches_flatten, # (bs, n_pages*n_boxes*n_patches)
 			patches_flatten_indices, # (bs, n_pages*n_boxes*n_patches)
-			patches_matrix_list # (bs, n_pages*n_boxes, n_patches)
+			patches_matrix_list, # (bs, n_pages*n_boxes, n_patches)
+			patches_xyxy # (bs, n_pages*n_boxes, 4)
 		) =\
 			self.chunker.get_chunks(
 				images,
@@ -155,7 +156,9 @@ class RAGPix2Struct(torch.nn.Module):
 				patch_embeddings,
 				question_embeddings,
 				patches_flatten_indices,
-				patches_matrix_list
+				patches_matrix_list,
+				patches_xyxy,
+				images
 			)
 		
 		# Prepare output

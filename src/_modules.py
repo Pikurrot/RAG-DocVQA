@@ -1155,12 +1155,18 @@ class ImageChunker:
 		patches = []
 		patches_matrix = []
 		patches_xyxy = []
-		assert mode in ["square", "horizontal"]
+		assert mode in ["square", "horizontal", "page"]
 
 		# Determine step size
 		step_size = patch_size - overlap
 		
-		if mode == "square":
+		if mode == "page":
+			# Page mode - use the entire image as a single patch
+			patches.append(image)
+			patches_matrix = [[image]]  # Single element matrix
+			patches_xyxy.append([0, 0, width, height])
+		
+		elif mode == "square":
 			# Original square patch implementation
 			num_patches_w = math.ceil((width - overlap) / step_size)
 			num_patches_h = math.ceil((height - overlap) / step_size)

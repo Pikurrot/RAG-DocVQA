@@ -266,22 +266,22 @@ if __name__ == "__main__":
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
 		"use_layout_labels": True,
-		"chunk_mode": "horizontal",
+		"chunk_mode": "page", # square / horizontal / page
 		"patch_size": 512,
-		"chunk_num": 5,
-		"overlap": False,
-		"include_surroundings": (0,1),
+		"chunk_num": 1,
+		"overlap": True,
+		"include_surroundings": (0,0),
 		"model_weights": "google/pix2struct-docvqa-base",
 		# "layout_model_weights": "cmarkea/dit-base-layout-detection",
-		"use_precomputed_layouts": False,
-		"precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
-		"cluster_layouts": True,
-		"cluster_mode": "spatial",
-		"calculate_n_clusters": "best"
+		# "use_precomputed_layouts": False,
+		# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		# "cluster_layouts": True,
+		# "cluster_mode": "spatial",
+		# "calculate_n_clusters": "best"
 	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:2",
+		"device": "cuda:3",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,

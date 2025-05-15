@@ -1,0 +1,7 @@
+dataset_name: MMLongBenchDoc
+data_dir: /data/users/elopez/MMLongBench-Doc
+page_retrieval: Concat  # Oracle / Concat / Logits / Maxconf / Anyconf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / Custom
+preload_documents: False  # Whether to preload all documents into memory
+max_pages: 5  # Maximum number of pages to process per document
+use_images: True  # Whether to load and use document images
+get_raw_ocr_data: True  # Whether to return raw OCR tokens and boxes 

@@ -182,7 +182,12 @@ class MMLongBenchDoc(Dataset):
             "answers": answers,
             "answer_page_idx": answer_page_idx,
             "num_pages": num_pages_used,
-            "load_time": time()-start_time
+            "load_time": time()-start_time,
+            # Add new fields from samples.json
+            "doc_type": record.get("doc_type", ""),
+            "evidence_pages": record.get("evidence_pages", "[]"),
+            "evidence_sources": record.get("evidence_sources", "[]"),
+            "answer_format": record.get("answer_format", "Str")
         }
 
         if self.use_images:

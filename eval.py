@@ -16,6 +16,7 @@ from src.utils import time_stamp_to_hhmmss, load_config, save_json
 from src.build_utils import build_model, build_dataset
 from src.RAGVT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
+from src.MMLongBenchDoc import MMLongBenchDoc
 from src.logger import LoggerEval
 from typing import Union
 
@@ -201,12 +202,20 @@ def evaluate(
 	model_name = model.__class__.__name__
 	model_name = "Hi-VT5" if model_name == "Proxy_HiVT5" else model_name
 
+	# Check if we're using MMLongBenchDoc dataset and if OpenAI API key is available
+	is_mmlongbenchdoc = isinstance(data_loader.dataset, MMLongBenchDoc)
+	has_openai_key = bool(os.getenv("OPENAI_API_KEY"))
+	if is_mmlongbenchdoc and not has_openai_key:
+		print("Warning: OpenAI API key not found. MMLongBenchDoc detailed evaluation will be skipped.")
+
 	if return_scores_by_sample:
 		scores_by_samples = {}
 		total_accuracies = []
 		total_anls = []
 		total_ret_prec = []
 		total_chunk_scores = []
+		if is_mmlongbenchdoc:
+			mmlongbenchdoc_predictions = []
 	else:
 		total_accuracies = 0
 		total_anls = 0
@@ -287,6 +296,18 @@ def evaluate(
 					"chunk_score": ret_eval["chunk_score"][_b],
 				}
 
+				# For MMLongBenchDoc, prepare predictions for detailed evaluation
+				if is_mmlongbenchdoc:
+					mmlongbenchdoc_predictions.append({
+						"question": batch["questions"][_b],
+						"answer": batch["answers"][_b][0],  # Take first answer as ground truth
+						"pred": pred_answers[_b] if pred_answers is not None else "",
+						"answer_format": batch.get("answer_format", ["Str"])[_b],
+						"evidence_pages": batch.get("evidence_pages", ["[]"])[_b],
+						"evidence_sources": batch.get("evidence_sources", ["[]"])[_b],
+						"doc_type": batch.get("doc_type", [""])[_b]
+					})
+
 		# Accumulate metrics for the whole dataset
 		if return_scores_by_sample:
 			total_accuracies.extend(metrics["accuracy"])
@@ -326,23 +347,6 @@ def evaluate(
 					"answer_page": answer_page
 				})
 
-		# Accumulate retrieval stats
-		# Debug print retrieval stats sizes after merging each batch:
-		# for key, stat in retrieval_stats.items():
-		# 	if isinstance(stat, Counter):
-		# 		counter_len = sum(stat.values())
-		# 		print(f"Batch {b}: Counter '{key}' total count: {counter_len}")
-		# 	elif isinstance(stat, dict):
-		# 		dict_len = len(stat)
-		# 		print(f"Batch {b}: Dict '{key}' length: {dict_len}")
-				
-		# # And similarly for retrieval_stats_examples:
-		# for key, examples in retrieval_stats_examples.items():
-		# 	if isinstance(examples, dict) and examples:
-		# 		max_key = max(examples, key=lambda k: len(examples[k]))
-		# 		max_len = len(examples[max_key])
-		# 		print(f"Batch {b}: Stat examples key '{key}', max length key: '{max_key}' with {max_len} examples")
-
 		if retrieval and "stats" in retrieval:
 			del retrieval["stats"]["layout_time"]
 			if b == 0:
@@ -368,7 +372,6 @@ def evaluate(
 		del pred_answers, pred_answer_pages, pred_answers_conf, metrics, ret_metric, ret_eval, batch
 		gc.collect()
 		torch.cuda.empty_cache()
-		# print(torch.cuda.memory_summary(device=None, abbreviated=False))
 
 		# Save data
 		if save_continuously or (b == len(data_loader) - 1):
@@ -411,6 +414,14 @@ def evaluate(
 				"results": results
 			}
 
+			# If using MMLongBenchDoc and OpenAI API key is available, add detailed evaluation results
+			if is_mmlongbenchdoc and has_openai_key and return_scores_by_sample:
+				mmlongbenchdoc_results = evaluator.evaluate(
+					mmlongbenchdoc_predictions,
+					output_path=os.path.join(config["save_dir"], "metrics", config["save_folder"], f"mmlongbenchdoc_{filename}")
+				)
+				res["mmlongbenchdoc_metrics"] = mmlongbenchdoc_results
+
 			# Save data
 			save_data = save_local(config, filename, res)
 
@@ -422,60 +433,60 @@ def evaluate(
 
 if __name__ == "__main__":
 	# Prepare model and dataset
-	# args = {
-	# 	"use_RAG": True,
-	# 	"model": "RAGVT5",
-	# 	"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE
-	# 	"embed_model": "BGE", # BGE / VT5 / JINA
-	# 	"reranker_model": "BGE",
-	# 	"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
-	# 	"add_sep_token": False,
-	# 	"batch_size": 100, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-	# 	"chunk_num": 20,
-	# 	"chunk_size": 60,
-	# 	"chunk_size_tol": 0.2,
-	# 	"overlap": 10,
-	# 	"include_surroundings": 0,
-	# 	"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
-	# 	# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_infographics_train_generator_info/best.ckpt",
-	# 	"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
-	# 	# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
-	# 	"reranker_weights": "BAAI/bge-reranker-v2-m3",
-	# 	# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
-	# 	"reorder_chunks": False,
-	# 	"rerank_filter_tresh": 0,
-	# 	"rerank_max_chunk_num": 10,
-	# 	"rerank_min_chunk_num": 1
-	# }
 	args = {
 		"use_RAG": True,
-		"model": "RAGPix2Struct",
-		# "layout_model": "DIT",
-		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
-		"batch_size": 8,
-		"layout_batch_size": 4,
-		"embedder_batch_size": 16,
-		"use_layout_labels": True,
-		"chunk_mode": "page",
-		"chunk_num": 1,
-		"patch_size": 512,
-		"overlap": True,
-		"include_surroundings": (0,0),
-		"model_weights": "google/pix2struct-docvqa-base",
-		# "layout_model_weights": "cmarkea/dit-base-layout-detection",
-		# "use_precomputed_layouts": False,
-		# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
-		# "cluster_layouts": True,
-		# "cluster_mode": "spatial",
-		# "calculate_n_clusters": "best"
+		"model": "RAGVT5",
+		"dataset": "MMLongBenchDoc", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+		"embed_model": "BGE", # BGE / VT5 / JINA
+		"reranker_model": "BGE",
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"add_sep_token": False,
+		"batch_size": 100, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"chunk_num": 20,
+		"chunk_size": 60,
+		"chunk_size_tol": 0.2,
+		"overlap": 10,
+		"include_surroundings": 0,
+		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
+		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_infographics_train_generator_info/best.ckpt",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
+		"reranker_weights": "BAAI/bge-reranker-v2-m3",
+		# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
+		"reorder_chunks": False,
+		"rerank_filter_tresh": 0,
+		"rerank_max_chunk_num": 10,
+		"rerank_min_chunk_num": 1
 	}
+	# args = {
+	# 	"use_RAG": True,
+	# 	"model": "RAGPix2Struct",
+	# 	# "layout_model": "DIT",
+	# 	"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
+	# 	"batch_size": 8,
+	# 	"layout_batch_size": 4,
+	# 	"embedder_batch_size": 16,
+	# 	"use_layout_labels": True,
+	# 	"chunk_mode": "page",
+	# 	"chunk_num": 1,
+	# 	"patch_size": 512,
+	# 	"overlap": True,
+	# 	"include_surroundings": (0,0),
+	# 	"model_weights": "google/pix2struct-docvqa-base",
+	# 	# "layout_model_weights": "cmarkea/dit-base-layout-detection",
+	# 	# "use_precomputed_layouts": False,
+	# 	# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
+	# 	# "cluster_layouts": True,
+	# 	# "cluster_mode": "spatial",
+	# 	# "calculate_n_clusters": "best"
+	# }
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
 		"device": "cuda:2",
-		"save_folder": "28-pix2struct-page",
-		"save_name_append": "rag-mpdocvqa-page",
+		"save_folder": "29-mmlongbenchdoc",
+		"save_name_append": "rag-mmlongbenchdoc",
 		"val_size": 1.0,
-		"log_wandb": True,
+		"log_wandb": False,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,

@@ -70,12 +70,12 @@ class Evaluator:
 				pred = self._preprocess_str(preds[b])
 				accuracy = self._calculate_accuracy(gt, pred, answer_types[b])
 				anls = self._calculate_anls(gt, pred, answer_types[b])
-				if top_k_layout_labels is not None:
-					layout_labels = top_k_layout_labels[b]
-					for label in layout_labels:
-						label = self.layout_map[label]
-						layout_labels_accuracy[label].append(accuracy)
-						layout_labels_anls[label].append(anls)
+				# if top_k_layout_labels is not None:
+				# 	layout_labels = top_k_layout_labels[b]
+					# for label in layout_labels:
+					# 	label = self.layout_map[label]
+					# 	layout_labels_accuracy[label].append(accuracy)
+					# 	layout_labels_anls[label].append(anls)
 				batch_accuracy.append(accuracy)
 				batch_anls.append(anls)
 

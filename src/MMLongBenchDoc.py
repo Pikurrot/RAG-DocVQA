@@ -82,7 +82,9 @@ class MMLongBenchDoc(Dataset):
         if question_id is not None:
             for idx in range(self.__len__()):
                 record = self.samples[idx]
-                if record["id"] == question_id:  # Assuming the field is "id"
+                if "id" in record and record["id"] == question_id:  # Assuming the field is "id"
+                    return self.__getitem__(idx)
+                elif idx == question_id:
                     return self.__getitem__(idx)
 
             raise ValueError(f"Question ID {question_id} not in dataset.")

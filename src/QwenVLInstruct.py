@@ -88,25 +88,29 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 					batch_resized.append(img)
 			resized_images.append(batch_resized)
 
-		messages = [[
-			{
+		# Construct messages for each sample in the batch
+		messages = []
+		for i in range(len(question)):
+			message = {
 				"role": "user",
 				"content": [
 					{
 						"type": "text",
 						"text": "question: " + question[i] +
-								"Directly provide only a short answer to the question. " +
+								"\nDirectly provide only a short answer to the question. " +
+								# "If the question cannot be answered with the provided data, respond with 'not answerable'. " +
 								"Context: " + " ".join(words[i])
-					}] + [
-					{
-						"type": "image",
-						"image": img,
 					}
-					for img in resized_images[i]
 				]
 			}
-			for i in range(len(question))
-		]]
+			# Add images for this sample
+			for img in resized_images[i]:
+				message["content"].append({
+					"type": "image",
+					"image": img,
+				})
+			messages.append([message])
+
 		texts = [
 			self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
 			for msg in messages
@@ -135,7 +139,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			# Create combined input-output texts for proper labeling
 			combined_texts = []
 			for i in range(len(question)):
-				combined_text = texts[0] + " " + answer_texts[i]
+				combined_text = texts[i] + " " + answer_texts[i]
 				combined_texts.append(combined_text)
 				
 			# Process the combined texts
@@ -151,7 +155,6 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			labels = input_ids.clone()
 			
 			# Find where the assistant part begins for each example
-			# Simplified - in practice we need to find exactly where "assistant:" starts
 			for i in range(len(question)):
 				# Find the position where assistant response begins
 				assistant_pos = (input_ids[i] == self.processor.tokenizer.convert_tokens_to_ids(

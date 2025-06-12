@@ -285,38 +285,44 @@ def evaluate(
 		if return_scores_by_sample:
 			# Save metrics for each sample
 			for _b in range(bs):
+				# Handle cases where metrics might be empty or have unexpected structure
+				accuracy = metrics.get("accuracy", [0]*bs)[_b] if _b < len(metrics.get("accuracy", [])) else 0
+				anls = metrics.get("anls", [0]*bs)[_b] if _b < len(metrics.get("anls", [])) else 0
+				ret_prec = ret_metric[_b] if _b < len(ret_metric) else 0
+				chunk_score = ret_eval["chunk_score"][_b] if _b < len(ret_eval["chunk_score"]) else 0
+				
 				scores_by_samples[batch["question_id"][_b]] = {
-					"accuracy": metrics["accuracy"][_b],
-					"anls": metrics["anls"][_b],
-					"ret_prec": ret_metric[_b],
-					"pred_answer": pred_answers[_b] if pred_answers is not None else "",
-					"actual_answer": batch["answers"][_b],
-					"pred_answer_conf": pred_answers_conf[_b] if pred_answers_conf is not None else 0,
-					"pred_answer_page": pred_answer_pages[_b] if pred_answer_pages is not None else 0,
-					"chunk_score": ret_eval["chunk_score"][_b],
+					"accuracy": accuracy,
+					"anls": anls,
+					"ret_prec": ret_prec,
+					"pred_answer": pred_answers[_b] if pred_answers is not None and _b < len(pred_answers) else "",
+					"actual_answer": batch["answers"][_b][0] if _b < len(batch["answers"]) and batch["answers"][_b] else "",
+					"pred_answer_conf": pred_answers_conf[_b] if pred_answers_conf is not None and _b < len(pred_answers_conf) else 0,
+					"pred_answer_page": pred_answer_pages[_b] if pred_answer_pages is not None and _b < len(pred_answer_pages) else 0,
+					"chunk_score": chunk_score,
 				}
 
 				# For MMLongBenchDoc, prepare predictions for detailed evaluation
 				if is_mmlongbenchdoc:
 					mmlongbenchdoc_predictions.append({
 						"question": batch["questions"][_b],
-						"answer": batch["answers"][_b][0],  # Take first answer as ground truth
-						"pred": pred_answers[_b] if pred_answers is not None else "",
-						"answer_format": batch.get("answer_format", ["Str"])[_b],
-						"evidence_pages": batch.get("evidence_pages", ["[]"])[_b],
-						"evidence_sources": batch.get("evidence_sources", ["[]"])[_b],
-						"doc_type": batch.get("doc_type", [""])[_b]
+						"answer": batch["answers"][_b][0] if _b < len(batch["answers"]) and batch["answers"][_b] else "",
+						"pred": pred_answers[_b] if pred_answers is not None and _b < len(pred_answers) else "",
+						"answer_format": batch.get("answer_format", ["Str"])[_b] if _b < len(batch.get("answer_format", [])) else "Str",
+						"evidence_pages": batch.get("evidence_pages", ["[]"])[_b] if _b < len(batch.get("evidence_pages", [])) else "[]",
+						"evidence_sources": batch.get("evidence_sources", ["[]"])[_b] if _b < len(batch.get("evidence_sources", [])) else "[]",
+						"doc_type": batch.get("doc_type", [""])[_b] if _b < len(batch.get("doc_type", [])) else ""
 					})
 
 		# Accumulate metrics for the whole dataset
 		if return_scores_by_sample:
-			total_accuracies.extend(metrics["accuracy"])
-			total_anls.extend(metrics["anls"])
+			total_accuracies.extend(metrics.get("accuracy", [0]*bs))
+			total_anls.extend(metrics.get("anls", [0]*bs))
 			total_ret_prec.extend(ret_metric)
 			total_chunk_scores.extend(ret_eval["chunk_score"])
 		else:
-			total_accuracies += sum(metrics["accuracy"])
-			total_anls += sum(metrics["anls"])
+			total_accuracies += sum(metrics.get("accuracy", [0]*bs))
+			total_anls += sum(metrics.get("anls", [0]*bs))
 			total_ret_prec += sum(ret_metric)
 			total_chunk_scores += sum(ret_eval["chunk_score"])
 		
@@ -325,11 +331,11 @@ def evaluate(
 			layout_time += retrieval["stats"]["layout_time"]	
 			retrieval_time += retrieval["retrieval_time"]
 			generation_time += retrieval["generation_time"]
-			retrieval["stats"]["layout_labels_accuracy"] = metrics["layout_labels_accuracy"]
-			retrieval["stats"]["layout_labels_anls"] = metrics["layout_labels_anls"]
+			retrieval["stats"]["layout_labels_accuracy"] = metrics.get("layout_labels_accuracy", {})
+			retrieval["stats"]["layout_labels_anls"] = metrics.get("layout_labels_anls", {})
 
-		if return_answers:
-			all_pred_answers.extend(pred_answers if pred_answers is not None else [])
+		if return_answers and pred_answers is not None:
+			all_pred_answers.extend(pred_answers)
 
 		if save_results:
 			for i in range(bs):
@@ -340,10 +346,10 @@ def evaluate(
 				elif isinstance(pred_answer_pages[i], int):
 					answer_page = pred_answer_pages[i]
 				else:
-					answer_page = pred_answer_pages[i][0]
+					answer_page = pred_answer_pages[i][0] if i < len(pred_answer_pages) else 0
 				results.append({
 					"questionId": batch["question_id"][i],
-					"answer": pred_answers[i] if pred_answers is not None else None,
+					"answer": pred_answers[i] if pred_answers is not None and i < len(pred_answers) else None,
 					"answer_page": answer_page
 				})
 
@@ -433,64 +439,69 @@ def evaluate(
 
 if __name__ == "__main__":
 	# Prepare model and dataset
-	args = {
-		"use_RAG": True,
-		"model": "RAGVT5",
-		"dataset": "MMLongBenchDoc", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
-		"embed_model": "BGE", # BGE / VT5 / JINA
-		"reranker_model": "BGE",
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
-		"add_sep_token": False,
-		"batch_size": 100, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"chunk_num": 20,
-		"chunk_size": 60,
-		"chunk_size_tol": 0.2,
-		"overlap": 10,
-		"include_surroundings": 0,
-		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
-		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_infographics_train_generator_info/best.ckpt",
-		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
-		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
-		"reranker_weights": "BAAI/bge-reranker-v2-m3",
-		# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
-		"reorder_chunks": False,
-		"rerank_filter_tresh": 0,
-		"rerank_max_chunk_num": 10,
-		"rerank_min_chunk_num": 1
-	}
 	# args = {
 	# 	"use_RAG": True,
-	# 	"model": "RAGPix2Struct",
-	# 	# "layout_model": "DIT",
-	# 	"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
-	# 	"batch_size": 8,
-	# 	"layout_batch_size": 4,
-	# 	"embedder_batch_size": 16,
-	# 	"use_layout_labels": True,
-	# 	"chunk_mode": "page",
-	# 	"chunk_num": 1,
-	# 	"patch_size": 512,
-	# 	"overlap": True,
-	# 	"include_surroundings": (0,0),
-	# 	"model_weights": "google/pix2struct-docvqa-base",
-	# 	# "layout_model_weights": "cmarkea/dit-base-layout-detection",
-	# 	# "use_precomputed_layouts": False,
-	# 	# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
-	# 	# "cluster_layouts": True,
-	# 	# "cluster_mode": "spatial",
-	# 	# "calculate_n_clusters": "best"
+	# 	"model": "RAGVT5",
+	# 	"dataset": "DUDE", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+	# 	"embed_model": "BGE", # BGE / VT5 / JINA
+	# 	"reranker_model": "BGE",
+	# 	"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+	# 	"add_sep_token": False,
+	# 	"batch_size": 1, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+	# 	"chunk_num": 20,
+	# 	"chunk_size": 60,
+	# 	"chunk_size_tol": 0.2,
+	# 	"overlap": 10,
+	# 	"include_surroundings": 0,
+	# 	"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+	# 	# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
+	# 	# "model_weights": "rubentito/vt5-base-spdocvqa",
+	# 	# "embed_weights": "BAAI/bge-small-en-v1.5",
+	# 	"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+	# 	# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
+	# 	"reranker_weights": "BAAI/bge-reranker-v2-m3",
+	# 	"lora_weights": "",
+	# 	# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
+	# 	"reorder_chunks": False,
+	# 	"rerank_filter_tresh": 0,
+	# 	"rerank_max_chunk_num": 10,
+	# 	"rerank_min_chunk_num": 1,
+	# 	# "use_precomputed_layouts": True,
+	# 	# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa_sem.npz"
 	# }
+	args = {
+		"use_RAG": False,
+		"model": "RAGPix2Struct",
+		# "layout_model": "DIT",
+		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
+		"batch_size": 8,
+		"layout_batch_size": 4,
+		"embedder_batch_size": 16,
+		"use_layout_labels": True,
+		"chunk_mode": "horizontal",
+		"chunk_num": 5,
+		"patch_size": 512,
+		"overlap": True,
+		"include_surroundings": (0,0),
+		"model_weights": "google/pix2struct-infographics-vqa-base",
+		# "layout_model_weights": "cmarkea/dit-base-layout-detection",
+		# "use_precomputed_layouts": False,
+		# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
+		# "cluster_layouts": True,
+		# "cluster_mode": "spatial",
+		# "calculate_n_clusters": "best"
+	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:2",
-		"save_folder": "29-mmlongbenchdoc",
-		"save_name_append": "rag-mmlongbenchdoc",
+		"device": "cuda:3",
+		"save_folder": "19-test",
+		"save_name_append": "test_dude_qwen_rag-v3",
 		"val_size": 1.0,
 		"log_wandb": False,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,
-		"save_results": False,
+		"save_results": True,
 		"save_continuously": True,
 		"compute_stats": False,
 		"compute_stats_examples": False,
@@ -538,7 +549,7 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	dataset = build_dataset(config, split="val", size=config["val_size"])
+	dataset = build_dataset(config, split="test", size=config["val_size"])
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model

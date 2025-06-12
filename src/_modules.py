@@ -2123,7 +2123,7 @@ class Retriever(StatComponent):
 		for b in range(bs):
 			for c in range(len(top_k_layout_labels[b])):
 				label = top_k_layout_labels[b][c]
-				self.stat_sum("layout_labels_topk_dist", self.layout_map[label])
+				# self.stat_sum("layout_labels_topk_dist", self.layout_map[label])
 		
 		# Reorder chunks by page and top-left first
 		if self.reorder_chunks:
@@ -2393,6 +2393,7 @@ class VisualRetriever:
 	):
 		bs = len(similarities)
 		surrounding_patches_list = [] # (bs, k) PIL images
+		page_indices_list = [] # (bs, k) page indices for each retrieved patch
 
 		# Get coordinates of the patches
 		for b in range(bs):
@@ -2401,17 +2402,18 @@ class VisualRetriever:
 			batch_patches_xyxy = patches_xyxy[b] # (n_patches, 4)
 			if len(batch_patches_flatten_indices) == 0:
 				surrounding_patches_list.append([])
+				page_indices_list.append([])
 				continue
 			batch_patches_matrix_list = patches_matrix_list[b] # (n_patches, h, w)
 			top_k = torch.topk(similarities[b], min(self.k, len(similarities[b]))).indices # (k,)
 			top_k = top_k.cpu().numpy()
 			for idx in top_k:
-				page_idx = batch_patches_flatten_indices[idx]
+				page_idx = int(batch_patches_flatten_indices[idx])  # Convert to Python int
 				idx_converted = idx - sum(np.count_nonzero(batch_patches_flatten_indices==i) for i in range(page_idx))
 				if self.mode == "square":
 					raise NotImplementedError()
 				elif self.mode == "horizontal":
-					row = idx_converted
+					row = int(idx_converted)  # Convert to Python int
 					col = 0
 					batch_patch_coords.append((page_idx, row, col))
 		
@@ -2439,9 +2441,13 @@ class VisualRetriever:
 				images[b]
 			)
 			
+			# Extract page indices from the surrounding coords and convert to Python integers
+			batch_page_indices = [int(coord[0]) for coord in set((coord[0],) for coord in surrounding_coords_set)]
+			
 			surrounding_patches_list.append(batch_surrounding_patches_list)
+			page_indices_list.append(batch_page_indices)
 
-		return surrounding_patches_list			
+		return surrounding_patches_list, page_indices_list
 
 
 	def retrieve(
@@ -2454,5 +2460,5 @@ class VisualRetriever:
 			images: List[List[Image.Image]] # (bs, n_pages)
 	) -> tuple:
 		similarities = self._get_similarities(patch_embeddings, question_embeddings)
-		top_k = self._get_top_k(similarities, patches_flatten_indices, patches_matrix_list, patches_xyxy, images)
-		return top_k
+		top_k, page_indices = self._get_top_k(similarities, patches_flatten_indices, patches_matrix_list, patches_xyxy, images)
+		return top_k, page_indices

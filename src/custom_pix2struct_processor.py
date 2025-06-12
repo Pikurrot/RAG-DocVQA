@@ -35,7 +35,8 @@ def extract_flattened_patches_single(
 	max_patches: int,
 	patch_size: Dict[str, int],
 	input_data_format: Optional[Union[str, str]] = None,
-	row_offset: int = 0
+	row_offset: int = 0,
+	pad: bool = True
 ) -> np.ndarray:
 	"""
 	Process a single image: resize to limit number of patches, extract patches (non-overlapping),
@@ -84,7 +85,7 @@ def extract_flattened_patches_single(
 	result = torch.cat([row_ids, col_ids, patches], dim=-1)  # Each patch becomes [row, col, features...]
 	
 	num_extracted = result.shape[0]
-	if num_extracted < max_patches:
+	if num_extracted < max_patches and pad:
 		pad_amt = max_patches - num_extracted
 		padding = torch.zeros((pad_amt, result.shape[-1]), dtype=result.dtype)
 		result = torch.cat([result, padding], dim=0)
@@ -115,7 +116,8 @@ def extract_multi_image_flattened_patches(
 			max_patches=max_per_image,
 			patch_size=patch_size,
 			input_data_format=input_data_format,
-			row_offset=row_offset
+			row_offset=row_offset,
+			pad=False
 		)
 		all_patches.append(patches)
 	concatenated = np.concatenate(all_patches, axis=0)

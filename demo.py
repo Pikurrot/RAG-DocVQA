@@ -84,6 +84,9 @@ def process(batch):
 	retrieved_chunks_list = retrieval["text"][0] if "text" in retrieval else [""]*len(retrieved_patches)  # List of strings
 	retrieved_top_k_layout_labels = retrieval["top_k_layout_labels"][0]  # List of integers
 	retrieved_chunks = "\n\n".join([f"Chunk {i+1} ({layout_map[label]}):\n{text}" for i, (text, label) in enumerate(zip(retrieved_chunks_list, retrieved_top_k_layout_labels))])
+	if "input_words" in retrieval:
+		input_text = " ".join(retrieval["input_words"][0])
+		retrieved_chunks = retrieved_chunks + "\n\nInput text:\n" + input_text
 
 	retrieved_page_indices_list = retrieval["page_indices"][0] if "page_indices" in retrieval else [0]*len(retrieved_patches)  # List of integers
 	page_retrieval = model.page_retrieval if hasattr(model, "page_retrieval") else "concat"
@@ -234,54 +237,56 @@ with gr.Blocks() as demo:
 
 if __name__ == "__main__":
 	print("Starting...")
-	args = {
-		"use_RAG": True,
-		"model": "RAGVT5",
-		"dataset": "MMLongBenchDoc",
-		"embed_model": "BGE",
-		"reranker_model": "BGE",
-		"page_retrieval": "Concat",
-		"add_sep_token": False,
-		"batch_size": 1,
-		"layout_batch_size": 4,
-		"chunk_num": 20,
-		"chunk_size": 60,
-		"chunk_size_tol": 0.2,
-		"overlap": 10,
-		"include_surroundings": 0,
-		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
-		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
-		"reorder_chunks": False,
-		"reranker_weights": "BAAI/bge-reranker-v2-m3",
-		"rerank_filter_tresh": 0,
-		"rerank_max_chunk_num": 10,
-		"rerank_min_chunk_num": 1
-	}
 	# args = {
 	# 	"use_RAG": True,
-	# 	"model": "RAGPix2Struct",
-	# 	"layout_model": "DIT",
-	# 	"dataset": "MMLongBenchDoc", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+	# 	"model": "RAGVT5",
+	# 	"dataset": "MP-DocVQA",
+	# 	"embed_model": "BGE",
+	# 	"reranker_model": "BGE",
+	# 	"page_retrieval": "Concat",
+	# 	"add_sep_token": False,
 	# 	"batch_size": 1,
 	# 	"layout_batch_size": 4,
-	# 	"embedder_batch_size": 16,
-	# 	"use_layout_labels": True,
-	# 	"chunk_mode": "page", # square / horizontal / page
-	# 	"patch_size": 512,
-	# 	"chunk_num": 1,
-	# 	"overlap": True,
-	# 	"include_surroundings": (0,0),
-	# 	"model_weights": "google/pix2struct-docvqa-base",
-	# 	# "layout_model_weights": "cmarkea/dit-base-layout-detection",
-	# 	# "use_precomputed_layouts": False,
-	# 	# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
-	# 	# "cluster_layouts": True,
-	# 	# "cluster_mode": "spatial",
-	# 	# "calculate_n_clusters": "best"
+	# 	"chunk_num": 20,
+	# 	"chunk_size": 60,
+	# 	"chunk_size_tol": 0.2,
+	# 	"overlap": 10,
+	# 	"include_surroundings": 0,
+	# 	# "model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+	# 	"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
+	# 	"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820",
+	# 	"lora_weights": "",
+	# 	"reorder_chunks": False,
+	# 	"reranker_weights": "BAAI/bge-reranker-v2-m3",
+	# 	"rerank_filter_tresh": 0,
+	# 	"rerank_max_chunk_num": 10,
+	# 	"rerank_min_chunk_num": 1
 	# }
+	args = {
+		"use_RAG": True,
+		"model": "RAGPix2Struct",
+		"layout_model": "DIT",
+		"dataset": "MP-DocVQA", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+		"batch_size": 1,
+		"layout_batch_size": 4,
+		"embedder_batch_size": 16,
+		"use_layout_labels": True,
+		"chunk_mode": "horizontal", # square / horizontal / page
+		"patch_size": 512,
+		"chunk_num": 5,
+		"overlap": True,
+		"include_surroundings": (0,0),
+		"model_weights": "google/pix2struct-docvqa-base",
+		# "layout_model_weights": "cmarkea/dit-base-layout-detection",
+		# "use_precomputed_layouts": False,
+		# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa.npz",
+		# "cluster_layouts": True,
+		# "cluster_mode": "spatial",
+		# "calculate_n_clusters": "best"
+	}
 	extra_args = {
 		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:2",
+		"device": "cuda:3",
 		"save_folder": "9-train_generator_with_layout",
 		"save_name_append": "train_generator",
 		"val_size": 1.0,
@@ -307,6 +312,9 @@ if __name__ == "__main__":
 	model = build_model(config)
 	print("Building dataset...")
 	dataset = build_dataset(config=config, split="val")
+	# print number of parameters
+	print(f"Number of parameters: {sum(p.numel() for p in model.parameters())}")
+	print(f"Number of parameters model.generator: {sum(p.numel() for p in model.generator.parameters())}")
 	
 	# Initialize the dataloader
 	dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)

@@ -352,7 +352,11 @@ class RAGVT5(torch.nn.Module):
 			new_batch["boxes"] = [flatten(b, add_sep_token) for b in top_k_words_boxes]  # (bs, k * n_words, 4)
 			new_batch["layout_labels"] = [flatten(b, add_sep_token) for b in top_k_words_layout_labels]  # (bs, k * n_words)
 			if not self.use_RAG or "qwen" in self.model_path.lower():
-				new_batch["images"] = top_k_patches  # (bs, k, h, w, 3)
+				# When not using RAG, take the first page from each batch item
+				if not self.use_RAG and "qwen" not in self.model_path.lower():
+					new_batch["images"] = [images[0] for images in top_k_patches]  # (bs, h, w, 3)
+				else:
+					new_batch["images"] = top_k_patches  # (bs, k, h, w, 3)
 			else:
 				new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)

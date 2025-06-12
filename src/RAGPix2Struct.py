@@ -150,7 +150,8 @@ class RAGPix2Struct(torch.nn.Module):
 
 		# Get top k chunks and boxes
 		(
-			top_k_patches # (bs, k)
+			top_k_patches, # (bs, k)
+			page_indices # (bs, k) page indices for retrieved patches
 		) =\
 			self.retriever.retrieve(
 				patch_embeddings,
@@ -174,6 +175,7 @@ class RAGPix2Struct(torch.nn.Module):
 
 		return (
 			top_k_patches, # (bs, k)
+			page_indices, # (bs, k) page indices for retrieved patches
 			steps
 		)
 	
@@ -190,12 +192,17 @@ class RAGPix2Struct(torch.nn.Module):
 			with torch.no_grad():
 				(
 					top_k_patches,
+					page_indices,
 					steps
 				) = self.online_retrieve(batch, return_steps=return_steps)
 			gc.collect()
 			torch.cuda.empty_cache()
+			# Keep page indices as regular Python objects (lists) for JSON serialization
+			pred_answer_pages = page_indices
 		else:
 			top_k_patches = batch["images"]
+			page_indices = None
+			pred_answer_pages = []
 			steps = {"layout_info": [[]], "layout_segments": [[]], "layout_info_raw": [[]]}
 		top_k_layout_labels = [[1] * len(patches) for patches in top_k_patches]
 
@@ -263,6 +270,7 @@ class RAGPix2Struct(torch.nn.Module):
 		else:
 			# Generate for each page, then take the one with the highest confidence
 			output_ids = []
+			pred_answer_pages = []
 			for b in range(bs):
 				question = batch["questions"][b]
 				prompt = question
@@ -272,6 +280,7 @@ class RAGPix2Struct(torch.nn.Module):
 				confidences = torch.tensor(get_generative_confidence(outputs))
 				best_page = torch.argmax(confidences)
 				output_ids.append(outputs.sequences[best_page])
+				pred_answer_pages.append([best_page.item()])  # Wrap in list to match RAG format
 			# pad the output ids
 			max_length = max([len(ids) for ids in output_ids])
 			for i in range(len(output_ids)):
@@ -281,13 +290,14 @@ class RAGPix2Struct(torch.nn.Module):
 			outputs = None
 			pred_answer = self.processor.batch_decode(output_ids, skip_special_tokens=True)
 
-		result = (outputs, pred_answer, None, None)
+		result = (outputs, pred_answer, pred_answer_pages, None)
 
 		if return_retrieval:
 			retrieval = {
 				"patches": top_k_patches,
 				"steps": steps,
-				"top_k_layout_labels": top_k_layout_labels
+				"top_k_layout_labels": top_k_layout_labels,
+				"page_indices": pred_answer_pages
 			}
 		else:
 			retrieval = {}

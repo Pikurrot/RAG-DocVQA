@@ -255,7 +255,6 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 				pred_answers, pred_answers_conf = None, None
 			pred_answer_pages = None
 		else:
-			print("Inference mode")
 			outputs = None
 			pred_answers, pred_answers_conf = self.get_answer_from_model_output(input_embeds, attention_mask)
 

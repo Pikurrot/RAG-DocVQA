@@ -111,6 +111,10 @@ def check_config(config: dict) -> bool:
 	return True
 
 def load_config(args: argparse.Namespace) -> dict:
+	original_dataset = args.dataset
+	if original_dataset == "MP-DocVQA-Noise":
+		args.dataset = "MP-DocVQA"
+
 	if args.model == "HiVT5":
 		args.embed_model = None
 		args.chunk_num = None
@@ -126,6 +130,7 @@ def load_config(args: argparse.Namespace) -> dict:
 	# Append and overwrite config values from arguments.
 	# config = {"dataset_params": dataset_config, "model_params": model_config, "training_params": training_config}
 	config = {**dataset_config, **model_config, **training_config}
+	config["dataset_name"] = original_dataset
 
 	config.update({k: v for k, v in args._get_kwargs() if v is not None})
 	config.pop("model")

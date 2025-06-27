@@ -112,8 +112,8 @@ def check_config(config: dict) -> bool:
 
 def load_config(args: argparse.Namespace) -> dict:
 	original_dataset = args.dataset
-	if original_dataset == "MP-DocVQA-Noise":
-		args.dataset = "MP-DocVQA"
+	if original_dataset.endswith("-Noise"):
+		args.dataset = original_dataset.replace("-Noise", "")
 
 	if args.model == "HiVT5":
 		args.embed_model = None

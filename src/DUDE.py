@@ -4,8 +4,9 @@ import random
 from PIL import Image
 from datasets import load_dataset, load_from_disk
 from torch.utils.data import Dataset
-from typing import Any, Dict
+from typing import Any, Dict, List
 from time import time
+from tqdm import tqdm
 
 class DUDE(Dataset):
 
@@ -221,3 +222,187 @@ def build_dude(config, split):
 	dataset.name = "DUDE"
 
 	return dataset
+
+
+class DUDE_NoisePages(DUDE):
+	"""
+	DUDE dataset with noise pages functionality.
+	For each sample, adds noise pages from random documents within the same dataset,
+	excluding the current document.
+	"""
+
+	def __init__(
+			self,
+			config: dict,
+	):
+		super().__init__(config)
+		
+		self.noise_pages = config.get("noise_pages", 0)
+		self.noise_seed = config.get("noise_seed", 42)
+		self.rng = random.Random(self.noise_seed)
+
+	def _get_document_id(self, record: dict) -> str:
+		"""
+		Generate a unique document identifier for a DUDE record.
+		Since DUDE doesn't have explicit document IDs, we'll use the question_id
+		or create one based on the record index.
+		"""
+		# Use question_id if available, otherwise use the record's hash
+		if "question_id" in record and record["question_id"] is not None:
+			return str(record["question_id"])
+		else:
+			# Fallback: use a hash of the first few OCR tokens to identify the document
+			if record["ocr_tokens"] and len(record["ocr_tokens"]) > 0 and len(record["ocr_tokens"][0]) > 0:
+				first_tokens = " ".join(record["ocr_tokens"][0][:5])  # First 5 tokens
+				return str(hash(first_tokens))
+			else:
+				return str(hash(str(record)))
+
+	def _get_noise_records(self, current_doc_id: str, num_noise_pages: int) -> List[tuple]:
+		"""
+		Sample noise records from the current dataset, excluding the current document.
+		
+		Args:
+			current_doc_id: The document ID of the current sample
+			num_noise_pages: Number of noise pages to sample
+			
+		Returns:
+			List of tuples containing (noise_record, page_index)
+		"""
+		# Find all records with different document IDs
+		candidate_records = []
+		for i, rec in tqdm(enumerate(self.dataset)):
+			if self._get_document_id(rec) != current_doc_id:
+				candidate_records.append(rec)
+		
+		if len(candidate_records) < num_noise_pages:
+			# If we don't have enough different documents, sample with replacement
+			noise_records = self.rng.choices(candidate_records, k=num_noise_pages)
+		else:
+			# Sample without replacement
+			noise_records = self.rng.sample(candidate_records, num_noise_pages)
+		
+		# For each selected document, also select a random page
+		noise_records_with_pages = []
+		for nrec in noise_records:
+			# Select a random page from this document
+			num_pages_in_doc = len(nrec["ocr_tokens"])
+			if num_pages_in_doc > 0:
+				random_page_idx = self.rng.randint(0, num_pages_in_doc - 1)
+				noise_records_with_pages.append((nrec, random_page_idx))
+		
+		return noise_records_with_pages
+
+	def __getitem__(self, idx: int) -> Dict[str, Any]:
+		start_time = time()
+		record = self.dataset[idx]
+
+		question = record["questions"]
+		if self.split == "train":
+			answers = [record.get("labels", "").lower()]
+		else:
+			answers = record.get("answers", [""])
+			if answers is None:
+				answers = [""]
+			else:
+				answers = list(set(answer.lower() for answer in answers))
+		answer_page_idx = 0
+		num_pages = len(record["ocr_tokens"])
+
+		context = []
+		for page_ix in range(num_pages):
+			context.append(" ".join(record["ocr_tokens"][page_ix]))
+
+		def ensure_portrait_orientation(img):
+			was_rotated = False
+			if img.width > img.height:
+				img = img.rotate(270, expand=True)
+				was_rotated = True
+			return img, was_rotated
+
+		rotated_pages = []
+		images = None
+
+		if self.use_images:
+			image_names = ["" for _ in range(num_pages)]
+			images = []
+			for i, img in enumerate(record["images"]):
+				img_obj, rotated = ensure_portrait_orientation(Image.open(io.BytesIO(img["bytes"])).convert("RGB"))
+				images.append(img_obj)
+				if rotated:
+					rotated_pages.append(i)
+
+		if self.get_raw_ocr_data:
+			words = []
+			boxes = record["ocr_boxes"].copy()
+			for p in range(num_pages):
+				words.append([word.lower() for word in record["ocr_tokens"][p]])
+				# Transform boxes for rotated pages
+				if p in rotated_pages:
+					for i, box in enumerate(boxes[p]):
+						xmin, ymin, xmax, ymax = box
+						boxes[p][i] = [1 - ymax, xmin, 1 - ymin, xmax]
+
+		# Add noise pages
+		if self.noise_pages > 0:
+			current_doc_id = self._get_document_id(record)
+			noise_records = self._get_noise_records(current_doc_id, self.noise_pages)
+			
+			for nrec, random_page_idx in noise_records:
+				# Append OCR text from the random page
+				if random_page_idx < len(nrec["ocr_tokens"]):
+					context.append(" ".join(nrec["ocr_tokens"][random_page_idx]))
+					
+					# Append boxes/words if requested
+					if self.get_raw_ocr_data:
+						words.append([word.lower() for word in nrec["ocr_tokens"][random_page_idx]])
+						if random_page_idx < len(nrec["ocr_boxes"]):
+							boxes.append(nrec["ocr_boxes"][random_page_idx])
+						else:
+							# Fallback: empty boxes if page doesn't exist
+							boxes.append([])
+					
+					# Append images if requested
+					if self.use_images and random_page_idx < len(nrec["images"]):
+						noise_img = nrec["images"][random_page_idx]
+						noise_img_obj, noise_rotated = ensure_portrait_orientation(
+							Image.open(io.BytesIO(noise_img["bytes"])).convert("RGB")
+						)
+						images.append(noise_img_obj)
+						image_names.append("")  # No specific name for noise images
+						
+						# Handle rotation for noise page boxes if needed
+						if noise_rotated and self.get_raw_ocr_data:
+							noise_boxes = boxes[-1]  # Get the boxes we just added
+							for i, box in enumerate(noise_boxes):
+								if len(box) == 4:
+									xmin, ymin, xmax, ymax = box
+									noise_boxes[i] = [1 - ymax, xmin, 1 - ymin, xmax]
+
+		start_idxs, end_idxs = 0, 0
+
+		sample_info = {
+			"question_id": record["question_id"] if "question_id" in record else 0,
+			"questions": question,
+			"contexts": context,
+			"context_page_corresp": None,
+			"answers": answers,
+			"answer_page_idx": answer_page_idx,
+			"num_pages": num_pages + self.noise_pages,
+			"num_noise_pages": self.noise_pages,
+			"num_seed_pages": num_pages,
+			"load_time": time()-start_time
+		}
+
+		if self.use_images:
+			sample_info["image_names"] = image_names
+			sample_info["images"] = images
+
+		if self.get_raw_ocr_data:
+			sample_info["words"] = words
+			sample_info["boxes"] = boxes
+		else:  # Information for extractive models
+			sample_info["start_indxs"] = start_idxs
+			sample_info["end_indxs"] = end_idxs
+
+		return sample_info

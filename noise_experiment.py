@@ -1,4 +1,7 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,4"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import sys
 import yaml
 import time
@@ -175,9 +178,9 @@ def run_experiment(model, config, noise_pages, repetitions):
 if __name__ == "__main__":
 	# Prepare model and dataset
 	args = {
-		"use_RAG": False,
+		"use_RAG": True,
 		"model": "RAGVT5",
-		"dataset": "MP-DocVQA-Noise", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+		"dataset": "DUDE-Noise", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
 		"embed_model": "BGE", # BGE / VT5 / JINA
 		"reranker_model": "BGE",
 		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
@@ -188,15 +191,16 @@ if __name__ == "__main__":
 		"chunk_size_tol": 0.2,
 		"overlap": 10,
 		"include_surroundings": 0,
-		"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+		# "model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
 		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
+		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/best.ckpt",
 		# "model_weights": "rubentito/vt5-base-spdocvqa",
 		# "embed_weights": "BAAI/bge-small-en-v1.5",
 		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
 		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
 		"reranker_weights": "BAAI/bge-reranker-v2-m3",
-		# "lora_weights": "",
-		"lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
+		"lora_weights": "",
+		# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
 		"reorder_chunks": False,
 		"rerank_filter_tresh": 0,
 		"rerank_max_chunk_num": 10,
@@ -206,10 +210,10 @@ if __name__ == "__main__":
 	}
 
 	extra_args = {
-		"visible_devices": "2,4",
-		"device": "auto",
+		# "visible_devices": "2,4",
+		"device": "cuda:0",
 		"save_folder": "32-experiment-noise",
-		"save_name_append": "noise-pages-v2-qwen-norag",
+		"save_name_append": "noise-pages-v2-ragvt5-dude",
 		"val_size": 1.0,
 		"log_wandb": False,
 		"log_media_interval": 10,
@@ -222,12 +226,6 @@ if __name__ == "__main__":
 		"n_stats_examples": 5,
 	}
 	args.update(extra_args)
-
-	if isinstance(args["visible_devices"], list):
-		os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in args["visible_devices"])
-	else:
-		os.environ["CUDA_VISIBLE_DEVICES"] = str(args["visible_devices"])
-
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	start_time = time.time()

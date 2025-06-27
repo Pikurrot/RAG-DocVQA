@@ -41,7 +41,8 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			cache_dir=config.cache_dir,
 			torch_dtype=config.torch_dtype,
 			attn_implementation=config._attn_implementation,
-   			device_map=config.device,
+   			device_map="auto", #config.device,
+			max_memory={0: "20GB", 1: "20GB"}
 		)
 		if self.lora_weights:
 			print(f"Loading LoRA weights from {self.lora_weights}")
@@ -49,7 +50,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 				self.model,
 				self.lora_weights,
 				torch_dtype=config.torch_dtype,
-				device_map=config.device,
+				# device_map="auto", #config.device,
 			)
 			print("LoRA weights loaded successfully")
 
@@ -58,7 +59,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 		self.train_mode = False
 
 	def to(self, device):
-		self.model.to(device)
+		# self.model.to(device)
 		self.device = device
 
 	def eval(self):

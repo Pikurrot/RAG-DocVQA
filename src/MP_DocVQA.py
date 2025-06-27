@@ -569,3 +569,215 @@ class MPDocVQA_NoisePages(Dataset):
 def mpdocvqa_collate_fn(batch: List[dict]) -> dict:  # It"s actually the same as in SP-DocVQA...
 	batch = {k: [dic[k] for dic in batch] for k in batch[0]}  # List of dictionaries to dict of lists.
 	return batch
+
+
+class MPDocVQA_NoisePagesv2(MPDocVQA_NoisePages):
+	"""
+	Version 2 of noise pages implementation that doesn't require reserving part of the dataset.
+	Instead, for each sample, it adds noise pages from random documents within the same dataset,
+	excluding the current document.
+	"""
+
+	def __init__(
+			self,
+			config: dict,
+	):
+		# Call parent constructor but skip the noise pool creation
+		imdb_dir = config["imdb_dir"]
+		images_dir = config["images_dir"]
+		page_retrieval = config["page_retrieval"]
+		split = config["split"]
+		data = np.load(os.path.join(imdb_dir, "imdb_{:s}.npy".format(split)), allow_pickle=True)
+		self.header = data[0]
+		self.imdb = data[1:]
+		size = config.get("size", 1.0)
+		if isinstance(size, float) and size < 1.0:
+			self.imdb = self.imdb[:int(size*len(self.imdb))]
+		elif isinstance(size, tuple):
+			self.imdb = self.imdb[int(size[0]*len(self.imdb)):int(size[1]*len(self.imdb))]
+		elif isinstance(size, int) and size > 1:
+			# Proportional sampling by number of pages
+			self.imdb = self._proportional_sampling_by_pages(self.imdb, size)
+
+		self.page_retrieval = page_retrieval.lower()
+		assert(self.page_retrieval in ["oracle", "concat", "logits", "custom", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage", "anyconforacle"])
+
+		self.max_answers = 2
+		self.images_dir = images_dir
+
+		self.use_images = config.get("use_images", False)
+		self.get_raw_ocr_data = config.get("get_raw_ocr_data", False)
+		self.max_pages = config.get("max_pages", 1)
+		self.noise_pages = config.get("noise_pages", 0)
+		self.noise_seed = config.get("noise_seed", 42)
+		self.rng = random.Random(self.noise_seed)
+
+		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
+		if self.use_precomputed_layouts:
+			layouts_file = config["precomputed_layouts_path"]
+			self.layout_info = np.load(layouts_file, allow_pickle=True)
+
+		# No need to create a separate noise pool - we'll sample from self.imdb directly
+
+	def _get_noise_records(self, current_doc_id: str, num_noise_pages: int) -> List[dict]:
+		"""
+		Sample noise records from the current dataset, excluding the current document.
+		
+		Args:
+			current_doc_id: The document ID of the current sample
+			num_noise_pages: Number of noise pages to sample
+			
+		Returns:
+			List of tuples containing (noise_record, page_index)
+		"""
+		# Find all records with different document IDs
+		candidate_records = [
+			rec for rec in self.imdb 
+			if rec['image_id'] != current_doc_id
+		]
+		
+		if len(candidate_records) < num_noise_pages:
+			# If we don't have enough different documents, sample with replacement
+			noise_records = self.rng.choices(candidate_records, k=num_noise_pages)
+		else:
+			# Sample without replacement
+			noise_records = self.rng.sample(candidate_records, num_noise_pages)
+		
+		# For each selected document, also select a random page
+		noise_records_with_pages = []
+		for nrec in noise_records:
+			# Select a random page from this document
+			num_pages_in_doc = len(nrec["ocr_tokens"])
+			random_page_idx = self.rng.randint(0, num_pages_in_doc - 1)
+			noise_records_with_pages.append((nrec, random_page_idx))
+		
+		return noise_records_with_pages
+
+	def __getitem__(self, idx: int) -> Dict[str, Any]:
+		start_time = time()
+		record = deepcopy(self.imdb[idx])
+
+		question = record["question"]
+		answers = list(set(answer.lower() for answer in record.get("answers", [""])))
+		answer_page_idx = record.get("answer_page_idx", 0)
+		num_pages = record["imdb_doc_pages"]
+
+		if self.page_retrieval in ["oracle", "anyconforacle"]:
+			context = [" ".join([word.lower() for word in record["ocr_tokens"][answer_page_idx]])]
+			context_page_corresp = None
+			num_pages = 1
+
+			if self.use_images:
+				image_names = os.path.join(self.images_dir, "{:s}.jpg".format(record['image_name'][answer_page_idx]))
+				images = [Image.open(image_names).convert("RGB")]
+				if self.use_precomputed_layouts:
+					layouts = [self.layout_info[record['image_name'][answer_page_idx]].item()]
+
+			if self.get_raw_ocr_data:
+				words = [[word.lower() for word in record['ocr_tokens'][answer_page_idx]]]
+				boxes = [record['ocr_normalized_boxes'][answer_page_idx]]
+			
+			start_idxs, end_idxs = self._get_start_end_idx(context[0], answers)
+		
+		elif self.page_retrieval in ["concat", "logits", "maxconf", "anyconf", "maxconfpage", "anyconfpage", "majorpage", "weightmajorpage"]:
+			context = []
+			for page_ix in range(record["imdb_doc_pages"]):
+				context.append(" ".join([word.lower() for word in record["ocr_tokens"][page_ix]]))
+
+			context_page_corresp = None
+
+			if self.use_images:
+				image_names = [os.path.join(self.images_dir, "{:s}.jpg".format(image_name)) for image_name in record["image_name"]]
+				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
+				if self.use_precomputed_layouts:
+					layouts = [self.layout_info[image_name].item() for image_name in record["image_name"]]
+
+			if self.get_raw_ocr_data:
+				words = []
+				boxes = record["ocr_normalized_boxes"]
+				for p in range(num_pages):
+					words.append([word.lower() for word in record["ocr_tokens"][p]])
+			
+			start_idxs, end_idxs = self._get_start_end_idx(context[answer_page_idx], answers)
+
+			# Add noise pages - modified to sample from current dataset
+			if self.noise_pages > 0:
+				current_doc_id = record['image_id']
+				noise_records = self._get_noise_records(current_doc_id, self.noise_pages)
+				
+				for nrec, random_page_idx in noise_records:
+					# append OCR text
+					context.append(" ".join(
+						w.lower() for w in nrec["ocr_tokens"][random_page_idx]))
+					# append boxes / words / images if requested
+					if self.get_raw_ocr_data:
+						words.append([w.lower() for w in
+									nrec["ocr_tokens"][random_page_idx]])
+						boxes.append(nrec["ocr_normalized_boxes"][random_page_idx])
+					if self.use_images:
+						n_img_path = os.path.join(self.images_dir,
+								f"{nrec['image_name'][random_page_idx]}.jpg")
+						images.append(Image.open(n_img_path).convert("RGB"))
+						if self.use_precomputed_layouts:
+							layouts.append(self.layout_info
+										[nrec['image_name'][random_page_idx]].item())
+
+		elif self.page_retrieval == "custom":
+			first_page, last_page = self.get_pages(record)
+			answer_page_idx = answer_page_idx - first_page
+			num_pages = len(range(first_page, last_page))
+
+			words = []
+			boxes = []
+			context = []
+			image_names = []
+
+			for page_ix in range(first_page, last_page):
+				words.append([word.lower() for word in record['ocr_tokens'][page_ix]])
+				boxes.append(np.array(record['ocr_normalized_boxes'][page_ix], dtype=np.float32))
+				context.append(' '.join([word.lower() for word in record['ocr_tokens'][page_ix]]))
+				image_names.append(os.path.join(self.images_dir, "{:s}.jpg".format(record['image_name'][page_ix])))
+
+			context_page_corresp = None
+
+			if num_pages < self.max_pages:
+				for _ in range(self.max_pages - num_pages):
+					words.append([''])
+					boxes.append(np.zeros([1, 4], dtype=np.float32))
+
+			if self.use_images:
+				images = [Image.open(img_path).convert("RGB") for img_path in image_names]
+				images += [Image.new('RGB', (2, 2)) for i in range(self.max_pages - len(image_names))]  # Pad with 2x2 images.
+				if self.use_precomputed_layouts:
+					layouts = [self.layout_info[image_name].item() for image_name in record["image_name"]]
+					layouts += [None for i in range(self.max_pages - len(layouts))]  # Pad with None layouts.
+				
+			start_idxs, end_idxs = None, None
+
+		sample_info = {
+			"question_id": record["question_id"],
+			"questions": question,
+			"contexts": context,
+			"context_page_corresp": context_page_corresp,
+			"answers": answers,
+			"answer_page_idx": answer_page_idx,
+			"num_pages": num_pages + self.noise_pages,
+			"num_noise_pages": self.noise_pages,
+			"num_seed_pages": num_pages,
+			"load_time": time()-start_time
+		}
+
+		if self.use_images:
+			sample_info["image_names"] = image_names
+			sample_info["images"] = images
+			if self.use_precomputed_layouts:
+				sample_info["layouts"] = layouts
+
+		if self.get_raw_ocr_data:
+			sample_info["words"] = words
+			sample_info["boxes"] = boxes
+		else:  # Information for extractive models
+			sample_info["start_indxs"] = start_idxs
+			sample_info["end_indxs"] = end_idxs
+
+		return sample_info

@@ -2,7 +2,7 @@ import transformers
 from src.RAGVT5 import RAGVT5
 from src.HiVT5 import Proxy_HiVT5
 from src.RAGPix2Struct import RAGPix2Struct
-from src.MP_DocVQA import MPDocVQA, MPDocVQA_NoisePages
+from src.MP_DocVQA import MPDocVQA, MPDocVQA_NoisePagesv2
 from src.Infographics import Infographics
 from src.DUDE import DUDE
 from src.SP_DocVQA import SPDocVQA
@@ -56,7 +56,7 @@ def build_dataset(
 	if config["dataset_name"].lower() == "mp-docvqa":
 		dataset = MPDocVQA(dataset_config)
 	elif config["dataset_name"].lower() == "mp-docvqa-noise":
-		dataset = MPDocVQA_NoisePages(dataset_config)
+		dataset = MPDocVQA_NoisePagesv2(dataset_config)
 	elif config["dataset_name"].lower() == "infographics":
 		dataset = Infographics(dataset_config)
 	elif config["dataset_name"].lower() == "dude":

@@ -125,6 +125,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			padding=True,
 			return_tensors="pt",
 			padding_side="left",
+			truncation=True,
 		)
 		
 		# Move to device

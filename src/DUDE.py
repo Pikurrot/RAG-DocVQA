@@ -240,6 +240,7 @@ class DUDE_NoisePages(DUDE):
 		self.noise_pages = config.get("noise_pages", 0)
 		self.noise_seed = config.get("noise_seed", 42)
 		self.rng = random.Random(self.noise_seed)
+		self.mix_noise_pages = config.get("mix_noise_pages", False)
 
 	def _get_document_id(self, record: dict) -> str:
 		"""
@@ -378,6 +379,24 @@ class DUDE_NoisePages(DUDE):
 								if len(box) == 4:
 									xmin, ymin, xmax, ymax = box
 									noise_boxes[i] = [1 - ymax, xmin, 1 - ymin, xmax]
+
+			# --- MIXING LOGIC ---
+			if self.mix_noise_pages:
+				# Gather all page-wise lists
+				page_tuples = list(zip(context,
+					words if self.get_raw_ocr_data else [None]*len(context),
+					boxes if self.get_raw_ocr_data else [None]*len(context),
+					images if self.use_images else [None]*len(context),
+					image_names if self.use_images else [None]*len(context)))
+				self.rng.shuffle(page_tuples)
+				# Unpack
+				context = [t[0] for t in page_tuples]
+				if self.get_raw_ocr_data:
+					words = [t[1] for t in page_tuples]
+					boxes = [t[2] for t in page_tuples]
+				if self.use_images:
+					images = [t[3] for t in page_tuples]
+					image_names = [t[4] for t in page_tuples]
 
 		start_idxs, end_idxs = 0, 0
 

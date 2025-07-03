@@ -9,6 +9,7 @@ from qwen_vl_utils import process_vision_info
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from typing import Tuple, Optional
 from peft import PeftModel
+from PIL import Image
 
 def shift_tokens_right(input_ids, pad_token_id, decoder_start_token_id):
     """Shift token ids to the right and prepend decoder_start_token_id."""
@@ -41,8 +42,9 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			cache_dir=config.cache_dir,
 			torch_dtype=config.torch_dtype,
 			attn_implementation=config._attn_implementation,
-   			device_map="auto", #config.device,
-			max_memory={0: "20GB", 1: "20GB"}
+			# device_map=config.device,
+   			device_map="auto",
+			# max_memory={0: "20GB", 1: "20GB"}
 		)
 		if self.lora_weights:
 			print(f"Loading LoRA weights from {self.lora_weights}")
@@ -50,17 +52,20 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 				self.model,
 				self.lora_weights,
 				torch_dtype=config.torch_dtype,
-				# device_map="auto", #config.device,
+				# device_map=config.device,
 			)
 			print("LoRA weights loaded successfully")
 
-		self.device = config.device
+		first_device = next(self.model.parameters()).device
+		self.device = first_device
 		self.max_seq_lenght = 131072
 		self.train_mode = False
+		self.qwen_downsize_images = config.qwen_downsize_images
 
 	def to(self, device):
 		# self.model.to(device)
-		self.device = device
+		# self.device = device
+		pass
 
 	def eval(self):
 		self.model.eval()
@@ -78,16 +83,40 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			answers: Optional[list] = None  # (bs,) Optional ground truth answers
 	) -> dict:
 		resized_images = []
-		for batch_imgs in images:
-			batch_resized = []
-			for img in batch_imgs:
-				if img.width < 28 or img.height < 28:
-					new_width = max(img.width, 28)
-					new_height = max(img.height, 28)
-					batch_resized.append(img.resize((new_width, new_height)))
-				else:
-					batch_resized.append(img)
-			resized_images.append(batch_resized)
+		if not self.qwen_downsize_images:
+			for batch_imgs in images:
+				batch_resized = []
+				for img in batch_imgs:
+					if img.width < 28 or img.height < 28:
+						new_width = max(img.width, 28)
+						new_height = max(img.height, 28)
+						batch_resized.append(img.resize((new_width, new_height)))
+					else:
+						batch_resized.append(img)
+				resized_images.append(batch_resized)
+		else:
+			for batch_imgs in images:
+				batch_resized = []
+				for img in batch_imgs:
+					# More aggressive resizing for memory efficiency
+					max_size = 512  # Much smaller than current size
+					if img.width < 28 or img.height < 28:
+						new_width = max(img.width, 28)
+						new_height = max(img.height, 28)
+						batch_resized.append(img.resize((new_width, new_height)))
+					elif img.width > max_size or img.height > max_size:
+						# Maintain aspect ratio
+						aspect = img.width / img.height
+						if aspect > 1:
+							new_width = max_size
+							new_height = int(max_size / aspect)
+						else:
+							new_height = max_size
+							new_width = int(max_size * aspect)
+						batch_resized.append(img.resize((new_width, new_height), Image.LANCZOS))
+					else:
+						batch_resized.append(img)
+				resized_images.append(batch_resized)
 
 		# Construct messages for each sample in the batch
 		messages = []
@@ -98,7 +127,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 					{
 						"type": "text",
 						"text": "question: " + question[i] +
-								"\nDirectly provide only a short answer to the question. " +
+								"\nDirectly provide only a short direct answer to the question. The answer appears in the following context." +
 								# "If the question cannot be answered with the provided data, respond with 'not answerable'. " +
 								"Context: " + " ".join(words[i])
 					}
@@ -126,7 +155,8 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 			padding=True,
 			return_tensors="pt",
 			padding_side="left",
-			truncation=True,
+			# truncation=True,
+			# max_length=self.max_seq_lenght,
 		)
 		
 		# Move to device
@@ -212,6 +242,7 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 				return_dict_in_generate=True,
 				output_attentions=False,
 				max_new_tokens=16,
+				# early_stopping=True
 			)
 
 		generated_ids_trimmed = [
@@ -226,5 +257,8 @@ class QwenVLForConditionalGeneration(torch.nn.Module):
 
 		# Extract confidence scores
 		pred_answers_conf = get_generative_confidence(output)
+
+		# Remove the "assistant: " prefix from the predictions
+		pred_answers = [pred.replace("assistant: ", "").replace("assistant\n", "").replace("assistant", "").replace(" addCriterion\n", "") for pred in pred_answers]
 
 		return pred_answers, pred_answers_conf

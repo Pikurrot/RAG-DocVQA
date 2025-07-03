@@ -226,7 +226,7 @@ class MPDocVQA_NoisePages(Dataset):
 
 	def __init__(
 			self,
-			config: dict,
+			config: dict
 	):
 		imdb_dir = config["imdb_dir"]
 		images_dir = config["images_dir"]
@@ -256,6 +256,7 @@ class MPDocVQA_NoisePages(Dataset):
 		self.noise_pages = config.get("noise_pages", 0)
 		self.noise_seed = config.get("noise_seed", 42)
 		self.rng = random.Random(self.noise_seed)
+		self.mix_noise_pages = config.get("mix_noise_pages", False)
 
 		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
 		if self.use_precomputed_layouts:
@@ -435,24 +436,36 @@ class MPDocVQA_NoisePages(Dataset):
 
 			# Add noise pages
 			if self.noise_pages > 0:
-				noise_records = self.rng.sample(self.noise_pool,
-												self.noise_pages)
+				noise_records = self.rng.sample(self.noise_pool, self.noise_pages)
 				for nrec in noise_records:
-					# append OCR text
-					context.append(" ".join(
-						w.lower() for w in nrec["ocr_tokens"][0]))
-					# append boxes / words / images if requested
+					context.append(" ".join(w.lower() for w in nrec["ocr_tokens"][0]))
 					if self.get_raw_ocr_data:
-						words.append([w.lower() for w in
-									nrec["ocr_tokens"][0]])
+						words.append([w.lower() for w in nrec["ocr_tokens"][0]])
 						boxes.append(nrec["ocr_normalized_boxes"][0])
 					if self.use_images:
-						n_img_path = os.path.join(self.images_dir,
-								f"{nrec['image_name'][0]}.jpg")
+						n_img_path = os.path.join(self.images_dir, f"{nrec['image_name'][0]}.jpg")
 						images.append(Image.open(n_img_path).convert("RGB"))
 						if self.use_precomputed_layouts:
-							layouts.append(self.layout_info
-										[nrec['image_name'][0]].item())
+							layouts.append(self.layout_info[nrec['image_name'][0]].item())
+
+				# --- MIXING LOGIC ---
+				if self.mix_noise_pages:
+					# Gather all page-wise lists
+					page_tuples = list(zip(context,
+						words if self.get_raw_ocr_data else [None]*len(context),
+						boxes if self.get_raw_ocr_data else [None]*len(context),
+						images if self.use_images else [None]*len(context),
+						layouts if self.use_precomputed_layouts else [None]*len(context)))
+					self.rng.shuffle(page_tuples)
+					# Unpack
+					context = [t[0] for t in page_tuples]
+					if self.get_raw_ocr_data:
+						words = [t[1] for t in page_tuples]
+						boxes = [t[2] for t in page_tuples]
+					if self.use_images:
+						images = [t[3] for t in page_tuples]
+					if self.use_precomputed_layouts:
+						layouts = [t[4] for t in page_tuples]
 
 		elif self.page_retrieval == "custom":
 			first_page, last_page = self.get_pages(record)
@@ -580,7 +593,7 @@ class MPDocVQA_NoisePagesv2(MPDocVQA_NoisePages):
 
 	def __init__(
 			self,
-			config: dict,
+			config: dict
 	):
 		# Call parent constructor but skip the noise pool creation
 		imdb_dir = config["imdb_dir"]
@@ -611,6 +624,7 @@ class MPDocVQA_NoisePagesv2(MPDocVQA_NoisePages):
 		self.noise_pages = config.get("noise_pages", 0)
 		self.noise_seed = config.get("noise_seed", 42)
 		self.rng = random.Random(self.noise_seed)
+		self.mix_noise_pages = config.get("mix_noise_pages", False)
 
 		self.use_precomputed_layouts = config.get("use_precomputed_layouts", False)
 		if self.use_precomputed_layouts:
@@ -721,6 +735,26 @@ class MPDocVQA_NoisePagesv2(MPDocVQA_NoisePages):
 						if self.use_precomputed_layouts:
 							layouts.append(self.layout_info
 										[nrec['image_name'][random_page_idx]].item())
+
+				# --- MIXING LOGIC ---
+				if self.mix_noise_pages:
+					print("Mixing noise pages...")
+					# Gather all page-wise lists
+					page_tuples = list(zip(context,
+						words if self.get_raw_ocr_data else [None]*len(context),
+						boxes if self.get_raw_ocr_data else [None]*len(context),
+						images if self.use_images else [None]*len(context),
+						layouts if self.use_precomputed_layouts else [None]*len(context)))
+					self.rng.shuffle(page_tuples)
+					# Unpack
+					context = [t[0] for t in page_tuples]
+					if self.get_raw_ocr_data:
+						words = [t[1] for t in page_tuples]
+						boxes = [t[2] for t in page_tuples]
+					if self.use_images:
+						images = [t[3] for t in page_tuples]
+					if self.use_precomputed_layouts:
+						layouts = [t[4] for t in page_tuples]
 
 		elif self.page_retrieval == "custom":
 			first_page, last_page = self.get_pages(record)

@@ -6,7 +6,6 @@ from datasets import load_dataset, load_from_disk
 from torch.utils.data import Dataset
 from typing import Any, Dict, List
 from time import time
-from tqdm import tqdm
 
 class DUDE(Dataset):
 
@@ -241,6 +240,41 @@ class DUDE_NoisePages(DUDE):
 		self.noise_seed = config.get("noise_seed", 42)
 		self.rng = random.Random(self.noise_seed)
 		self.mix_noise_pages = config.get("mix_noise_pages", False)
+		
+		# Pre-compute document index for efficient noise sampling
+		if self.noise_pages > 0:
+			self._build_document_index()
+
+	def _build_document_index(self):
+		"""
+		Pre-compute an index of all documents and their page counts for efficient sampling.
+		This avoids iterating through the entire dataset for each sample.
+		"""
+		print("Building document index for efficient noise sampling...")
+		self.document_index = {}  # doc_id -> list of (dataset_idx, num_pages)
+		
+		# Use dataset length if available, otherwise iterate
+		dataset_length = getattr(self.dataset, 'num_samples', len(self.dataset))
+		
+		for idx in range(dataset_length):
+			try:
+				record = self.dataset[idx]
+				doc_id = self._get_document_id(record)
+				num_pages = len(record["ocr_tokens"])
+				
+				if doc_id not in self.document_index:
+					self.document_index[doc_id] = []
+				self.document_index[doc_id].append((idx, num_pages))
+				
+				# Progress indicator for large datasets
+				if (idx + 1) % 1000 == 0:
+					print(f"Processed {idx + 1}/{dataset_length} records...")
+					
+			except Exception as e:
+				print(f"Error processing record {idx}: {e}")
+				continue
+		
+		print(f"Document index built: {len(self.document_index)} unique documents")
 
 	def _get_document_id(self, record: dict) -> str:
 		"""
@@ -262,6 +296,7 @@ class DUDE_NoisePages(DUDE):
 	def _get_noise_records(self, current_doc_id: str, num_noise_pages: int) -> List[tuple]:
 		"""
 		Sample noise records from the current dataset, excluding the current document.
+		Uses pre-computed document index for efficient sampling.
 		
 		Args:
 			current_doc_id: The document ID of the current sample
@@ -270,27 +305,34 @@ class DUDE_NoisePages(DUDE):
 		Returns:
 			List of tuples containing (noise_record, page_index)
 		"""
-		# Find all records with different document IDs
-		candidate_records = []
-		for i, rec in tqdm(enumerate(self.dataset)):
-			if self._get_document_id(rec) != current_doc_id:
-				candidate_records.append(rec)
+		# Get all document IDs except the current one
+		available_doc_ids = [doc_id for doc_id in self.document_index.keys() if doc_id != current_doc_id]
 		
-		if len(candidate_records) < num_noise_pages:
-			# If we don't have enough different documents, sample with replacement
-			noise_records = self.rng.choices(candidate_records, k=num_noise_pages)
-		else:
-			# Sample without replacement
-			noise_records = self.rng.sample(candidate_records, num_noise_pages)
+		if not available_doc_ids:
+			print("Warning: No other documents available for noise sampling")
+			return []
 		
-		# For each selected document, also select a random page
 		noise_records_with_pages = []
-		for nrec in noise_records:
-			# Select a random page from this document
-			num_pages_in_doc = len(nrec["ocr_tokens"])
-			if num_pages_in_doc > 0:
-				random_page_idx = self.rng.randint(0, num_pages_in_doc - 1)
-				noise_records_with_pages.append((nrec, random_page_idx))
+		
+		for _ in range(num_noise_pages):
+			# Sample a random document
+			chosen_doc_id = self.rng.choice(available_doc_ids)
+			doc_entries = self.document_index[chosen_doc_id]
+			
+			# Sample a random entry (dataset_idx, num_pages) for this document
+			dataset_idx, num_pages = self.rng.choice(doc_entries)
+			
+			# Sample a random page from this document
+			if num_pages > 0:
+				random_page_idx = self.rng.randint(0, num_pages - 1)
+				
+				# Load the actual record
+				try:
+					noise_record = self.dataset[dataset_idx]
+					noise_records_with_pages.append((noise_record, random_page_idx))
+				except Exception as e:
+					print(f"Error loading record {dataset_idx}: {e}")
+					continue
 		
 		return noise_records_with_pages
 
@@ -382,21 +424,65 @@ class DUDE_NoisePages(DUDE):
 
 			# --- MIXING LOGIC ---
 			if self.mix_noise_pages:
-				# Gather all page-wise lists
-				page_tuples = list(zip(context,
-					words if self.get_raw_ocr_data else [None]*len(context),
-					boxes if self.get_raw_ocr_data else [None]*len(context),
-					images if self.use_images else [None]*len(context),
-					image_names if self.use_images else [None]*len(context)))
-				self.rng.shuffle(page_tuples)
-				# Unpack
-				context = [t[0] for t in page_tuples]
+				# Separate original pages and noise pages
+				original_pages = len(context) - self.noise_pages
+				
+				# Extract original and noise page data
+				original_context = context[:original_pages]
+				noise_context = context[original_pages:]
+				
+				original_words = words[:original_pages] if self.get_raw_ocr_data else [None]*original_pages
+				noise_words = words[original_pages:] if self.get_raw_ocr_data else [None]*self.noise_pages
+				
+				original_boxes = boxes[:original_pages] if self.get_raw_ocr_data else [None]*original_pages
+				noise_boxes = boxes[original_pages:] if self.get_raw_ocr_data else [None]*self.noise_pages
+				
+				original_images = images[:original_pages] if self.use_images else [None]*original_pages
+				noise_images = images[original_pages:] if self.use_images else [None]*self.noise_pages
+				
+				original_image_names = image_names[:original_pages] if self.use_images else [None]*original_pages
+				noise_image_names = image_names[original_pages:] if self.use_images else [None]*self.noise_pages
+				
+				# Create noise page tuples and shuffle them
+				noise_tuples = list(zip(noise_context, noise_words, noise_boxes, noise_images, noise_image_names))
+				self.rng.shuffle(noise_tuples)
+				
+				# Generate random positions to insert noise pages
+				# Positions can be before first page, between pages, or after last page
+				total_positions = original_pages + 1  # positions between/around original pages
+				insert_positions = sorted(self.rng.choices(range(total_positions), k=self.noise_pages))
+				
+				# Build the final mixed lists
+				mixed_context, mixed_words, mixed_boxes, mixed_images, mixed_image_names = [], [], [], [], []
+				
+				noise_idx = 0
+				for orig_idx in range(original_pages + 1):  # +1 to handle insertion after last page
+					# Insert noise pages that should go before this original page
+					while noise_idx < len(insert_positions) and insert_positions[noise_idx] == orig_idx:
+						nt = noise_tuples[noise_idx]
+						mixed_context.append(nt[0])
+						mixed_words.append(nt[1])
+						mixed_boxes.append(nt[2])
+						mixed_images.append(nt[3])
+						mixed_image_names.append(nt[4])
+						noise_idx += 1
+					
+					# Add original page (if not past the end)
+					if orig_idx < original_pages:
+						mixed_context.append(original_context[orig_idx])
+						mixed_words.append(original_words[orig_idx])
+						mixed_boxes.append(original_boxes[orig_idx])
+						mixed_images.append(original_images[orig_idx])
+						mixed_image_names.append(original_image_names[orig_idx])
+				
+				# Update the lists
+				context = mixed_context
 				if self.get_raw_ocr_data:
-					words = [t[1] for t in page_tuples]
-					boxes = [t[2] for t in page_tuples]
+					words = [w for w in mixed_words if w is not None]
+					boxes = [b for b in mixed_boxes if b is not None]
 				if self.use_images:
-					images = [t[3] for t in page_tuples]
-					image_names = [t[4] for t in page_tuples]
+					images = [i for i in mixed_images if i is not None]
+					image_names = [n for n in mixed_image_names if n is not None]
 
 		start_idxs, end_idxs = 0, 0
 

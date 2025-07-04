@@ -450,22 +450,66 @@ class MPDocVQA_NoisePages(Dataset):
 
 				# --- MIXING LOGIC ---
 				if self.mix_noise_pages:
-					# Gather all page-wise lists
-					page_tuples = list(zip(context,
-						words if self.get_raw_ocr_data else [None]*len(context),
-						boxes if self.get_raw_ocr_data else [None]*len(context),
-						images if self.use_images else [None]*len(context),
-						layouts if self.use_precomputed_layouts else [None]*len(context)))
-					self.rng.shuffle(page_tuples)
-					# Unpack
-					context = [t[0] for t in page_tuples]
+					# Separate original pages and noise pages
+					original_pages = len(context) - self.noise_pages
+					
+					# Extract original and noise page data
+					original_context = context[:original_pages]
+					noise_context = context[original_pages:]
+					
+					original_words = words[:original_pages] if self.get_raw_ocr_data else [None]*original_pages
+					noise_words = words[original_pages:] if self.get_raw_ocr_data else [None]*self.noise_pages
+					
+					original_boxes = boxes[:original_pages] if self.get_raw_ocr_data else [None]*original_pages
+					noise_boxes = boxes[original_pages:] if self.get_raw_ocr_data else [None]*self.noise_pages
+					
+					original_images = images[:original_pages] if self.use_images else [None]*original_pages
+					noise_images = images[original_pages:] if self.use_images else [None]*self.noise_pages
+					
+					original_layouts = layouts[:original_pages] if self.use_precomputed_layouts else [None]*original_pages
+					noise_layouts = layouts[original_pages:] if self.use_precomputed_layouts else [None]*self.noise_pages
+					
+					# Create noise page tuples and shuffle them
+					noise_tuples = list(zip(noise_context, noise_words, noise_boxes, noise_images, noise_layouts))
+					self.rng.shuffle(noise_tuples)
+					
+					# Generate random positions to insert noise pages
+					# Positions can be before first page, between pages, or after last page
+					total_positions = original_pages + 1  # positions between/around original pages
+					insert_positions = sorted(self.rng.choices(range(total_positions), k=self.noise_pages))
+					
+					# Build the final mixed lists
+					mixed_context, mixed_words, mixed_boxes, mixed_images, mixed_layouts = [], [], [], [], []
+					
+					noise_idx = 0
+					for orig_idx in range(original_pages + 1):  # +1 to handle insertion after last page
+						# Insert noise pages that should go before this original page
+						while noise_idx < len(insert_positions) and insert_positions[noise_idx] == orig_idx:
+							nt = noise_tuples[noise_idx]
+							mixed_context.append(nt[0])
+							mixed_words.append(nt[1])
+							mixed_boxes.append(nt[2])
+							mixed_images.append(nt[3])
+							mixed_layouts.append(nt[4])
+							noise_idx += 1
+						
+						# Add original page (if not past the end)
+						if orig_idx < original_pages:
+							mixed_context.append(original_context[orig_idx])
+							mixed_words.append(original_words[orig_idx])
+							mixed_boxes.append(original_boxes[orig_idx])
+							mixed_images.append(original_images[orig_idx])
+							mixed_layouts.append(original_layouts[orig_idx])
+					
+					# Update the lists
+					context = mixed_context
 					if self.get_raw_ocr_data:
-						words = [t[1] for t in page_tuples]
-						boxes = [t[2] for t in page_tuples]
+						words = [w for w in mixed_words if w is not None]
+						boxes = [b for b in mixed_boxes if b is not None]
 					if self.use_images:
-						images = [t[3] for t in page_tuples]
+						images = [i for i in mixed_images if i is not None]
 					if self.use_precomputed_layouts:
-						layouts = [t[4] for t in page_tuples]
+						layouts = [l for l in mixed_layouts if l is not None]
 
 		elif self.page_retrieval == "custom":
 			first_page, last_page = self.get_pages(record)
@@ -738,23 +782,66 @@ class MPDocVQA_NoisePagesv2(MPDocVQA_NoisePages):
 
 				# --- MIXING LOGIC ---
 				if self.mix_noise_pages:
-					print("Mixing noise pages...")
-					# Gather all page-wise lists
-					page_tuples = list(zip(context,
-						words if self.get_raw_ocr_data else [None]*len(context),
-						boxes if self.get_raw_ocr_data else [None]*len(context),
-						images if self.use_images else [None]*len(context),
-						layouts if self.use_precomputed_layouts else [None]*len(context)))
-					self.rng.shuffle(page_tuples)
-					# Unpack
-					context = [t[0] for t in page_tuples]
+					# Separate original pages and noise pages
+					original_pages = len(context) - self.noise_pages
+					
+					# Extract original and noise page data
+					original_context = context[:original_pages]
+					noise_context = context[original_pages:]
+					
+					original_words = words[:original_pages] if self.get_raw_ocr_data else [None]*original_pages
+					noise_words = words[original_pages:] if self.get_raw_ocr_data else [None]*self.noise_pages
+					
+					original_boxes = boxes[:original_pages] if self.get_raw_ocr_data else [None]*original_pages
+					noise_boxes = boxes[original_pages:] if self.get_raw_ocr_data else [None]*self.noise_pages
+					
+					original_images = images[:original_pages] if self.use_images else [None]*original_pages
+					noise_images = images[original_pages:] if self.use_images else [None]*self.noise_pages
+					
+					original_layouts = layouts[:original_pages] if self.use_precomputed_layouts else [None]*original_pages
+					noise_layouts = layouts[original_pages:] if self.use_precomputed_layouts else [None]*self.noise_pages
+					
+					# Create noise page tuples and shuffle them
+					noise_tuples = list(zip(noise_context, noise_words, noise_boxes, noise_images, noise_layouts))
+					self.rng.shuffle(noise_tuples)
+					
+					# Generate random positions to insert noise pages
+					# Positions can be before first page, between pages, or after last page
+					total_positions = original_pages + 1  # positions between/around original pages
+					insert_positions = sorted(self.rng.choices(range(total_positions), k=self.noise_pages))
+					
+					# Build the final mixed lists
+					mixed_context, mixed_words, mixed_boxes, mixed_images, mixed_layouts = [], [], [], [], []
+					
+					noise_idx = 0
+					for orig_idx in range(original_pages + 1):  # +1 to handle insertion after last page
+						# Insert noise pages that should go before this original page
+						while noise_idx < len(insert_positions) and insert_positions[noise_idx] == orig_idx:
+							nt = noise_tuples[noise_idx]
+							mixed_context.append(nt[0])
+							mixed_words.append(nt[1])
+							mixed_boxes.append(nt[2])
+							mixed_images.append(nt[3])
+							mixed_layouts.append(nt[4])
+							noise_idx += 1
+						
+						# Add original page (if not past the end)
+						if orig_idx < original_pages:
+							mixed_context.append(original_context[orig_idx])
+							mixed_words.append(original_words[orig_idx])
+							mixed_boxes.append(original_boxes[orig_idx])
+							mixed_images.append(original_images[orig_idx])
+							mixed_layouts.append(original_layouts[orig_idx])
+					
+					# Update the lists
+					context = mixed_context
 					if self.get_raw_ocr_data:
-						words = [t[1] for t in page_tuples]
-						boxes = [t[2] for t in page_tuples]
+						words = [w for w in mixed_words if w is not None]
+						boxes = [b for b in mixed_boxes if b is not None]
 					if self.use_images:
-						images = [t[3] for t in page_tuples]
+						images = [i for i in mixed_images if i is not None]
 					if self.use_precomputed_layouts:
-						layouts = [t[4] for t in page_tuples]
+						layouts = [l for l in mixed_layouts if l is not None]
 
 		elif self.page_retrieval == "custom":
 			first_page, last_page = self.get_pages(record)

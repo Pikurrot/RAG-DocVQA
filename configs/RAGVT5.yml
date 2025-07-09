@@ -18,3 +18,6 @@ visual_module:
   finetune: false
   model_weights: 'microsoft/dit-base-finetuned-rvlcdip'  # 'google/vit-base-patch16-224-in21k' / 'microsoft/dit-base-finetuned-rvlcdip'
 
+not_answerable_mlp:
+  hidden_dim: 512
+  num_layers: 2

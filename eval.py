@@ -1,4 +1,7 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import sys
 import yaml
 import time
@@ -439,69 +442,70 @@ def evaluate(
 
 if __name__ == "__main__":
 	# Prepare model and dataset
-	# args = {
-	# 	"use_RAG": True,
-	# 	"model": "RAGVT5",
-	# 	"dataset": "DUDE", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
-	# 	"embed_model": "BGE", # BGE / VT5 / JINA
-	# 	"reranker_model": "BGE",
-	# 	"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
-	# 	"add_sep_token": False,
-	# 	"batch_size": 1, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-	# 	"chunk_num": 20,
-	# 	"chunk_size": 60,
-	# 	"chunk_size_tol": 0.2,
-	# 	"overlap": 10,
-	# 	"include_surroundings": 0,
-	# 	"model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
-	# 	# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
-	# 	# "model_weights": "rubentito/vt5-base-spdocvqa",
-	# 	# "embed_weights": "BAAI/bge-small-en-v1.5",
-	# 	"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
-	# 	# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
-	# 	"reranker_weights": "BAAI/bge-reranker-v2-m3",
-	# 	"lora_weights": "",
-	# 	# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
-	# 	"reorder_chunks": False,
-	# 	"rerank_filter_tresh": 0,
-	# 	"rerank_max_chunk_num": 10,
-	# 	"rerank_min_chunk_num": 1,
-	# 	# "use_precomputed_layouts": True,
-	# 	# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa_sem.npz"
-	# }
 	args = {
-		"use_RAG": False,
-		"model": "RAGPix2Struct",
-		# "layout_model": "DIT",
-		"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
-		"batch_size": 8,
-		"layout_batch_size": 4,
-		"embedder_batch_size": 16,
-		"use_layout_labels": True,
-		"chunk_mode": "horizontal",
-		"chunk_num": 5,
-		"patch_size": 512,
-		"overlap": True,
-		"include_surroundings": (0,0),
-		"model_weights": "google/pix2struct-infographics-vqa-base",
-		# "layout_model_weights": "cmarkea/dit-base-layout-detection",
-		# "use_precomputed_layouts": False,
-		# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
-		# "cluster_layouts": True,
-		# "cluster_mode": "spatial",
-		# "calculate_n_clusters": "best"
+		"use_RAG": True,
+		"model": "RAGVT5",
+		"dataset": "DUDE", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+		"embed_model": "BGE", # BGE / VT5 / JINA
+		"reranker_model": "BGE",
+		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+		"add_sep_token": False,
+		"batch_size": 50, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+		"chunk_num": 20,
+		"chunk_size": 60,
+		"chunk_size_tol": 0.2,
+		"overlap": 10,
+		"include_surroundings": 0,
+		# "model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
+		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/best.ckpt",
+		# "model_weights": "rubentito/vt5-base-spdocvqa",
+		# "embed_weights": "BAAI/bge-small-en-v1.5",
+		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
+		"reranker_weights": "BAAI/bge-reranker-v2-m3",
+		"lora_weights": "",
+		# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
+		"reorder_chunks": False,
+		"rerank_filter_tresh": 0,
+		"rerank_max_chunk_num": 10,
+		"rerank_min_chunk_num": 1,
+		# "use_precomputed_layouts": True,
+		# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa_sem.npz"
 	}
+	# args = {
+	# 	"use_RAG": False,
+	# 	"model": "RAGPix2Struct",
+	# 	# "layout_model": "DIT",
+	# 	"dataset": "Infographics", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
+	# 	"batch_size": 8,
+	# 	"layout_batch_size": 4,
+	# 	"embedder_batch_size": 16,
+	# 	"use_layout_labels": True,
+	# 	"chunk_mode": "horizontal",
+	# 	"chunk_num": 5,
+	# 	"patch_size": 512,
+	# 	"overlap": True,
+	# 	"include_surroundings": (0,0),
+	# 	"model_weights": "google/pix2struct-infographics-vqa-base",
+	# 	# "layout_model_weights": "cmarkea/dit-base-layout-detection",
+	# 	# "use_precomputed_layouts": False,
+	# 	# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
+	# 	# "cluster_layouts": True,
+	# 	# "cluster_mode": "spatial",
+	# 	# "calculate_n_clusters": "best"
+	# }
 	extra_args = {
-		"visible_devices": "0,1,2,3,4",
-		"device": "cuda:3",
-		"save_folder": "19-test",
-		"save_name_append": "test_dude_qwen_rag-v3",
+		# "visible_devices": "0,1,2,3,4",
+		"device": "cuda:0",
+		"save_folder": "18-dude",
+		"save_name_append": "val-dude-rag-again",
 		"val_size": 1.0,
 		"log_wandb": False,
 		"log_media_interval": 10,
 		"return_scores_by_sample": True,
 		"return_answers": True,
-		"save_results": True,
+		"save_results": False,
 		"save_continuously": True,
 		"compute_stats": False,
 		"compute_stats_examples": False,
@@ -531,10 +535,10 @@ if __name__ == "__main__":
 				v = int(v)
 			args[k] = v
 
-	if isinstance(args["visible_devices"], list):
-		os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in args["visible_devices"])
-	else:
-		os.environ["CUDA_VISIBLE_DEVICES"] = str(args["visible_devices"])
+	# if isinstance(args["visible_devices"], list):
+	# 	os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in args["visible_devices"])
+	# else:
+	# 	os.environ["CUDA_VISIBLE_DEVICES"] = str(args["visible_devices"])
 
 	args = argparse.Namespace(**args)
 	config = load_config(args)
@@ -549,7 +553,7 @@ if __name__ == "__main__":
 	model = build_model(config)
 	model.to(config["device"])
 	print("Building dataset...")
-	dataset = build_dataset(config, split="test", size=config["val_size"])
+	dataset = build_dataset(config, split="val", size=config["val_size"])
 	val_data_loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False, collate_fn=mpdocvqa_collate_fn, num_workers=0)
 
 	# Evaluate the model

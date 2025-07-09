@@ -135,7 +135,8 @@ class DUDE_Raw:
 			"questions": [],
 			"images": [],
 			"ocr_tokens": [],
-			"ocr_boxes": []
+			"ocr_boxes": [],
+			"answer_type": []
 		}
 
 		n_pages = len(sample["images"])
@@ -175,7 +176,7 @@ class DUDE_Raw:
 			new_sample["images"].append(images[first_page:last_page])
 			new_sample["ocr_boxes"].append(sample['ocr_boxes'][first_page:last_page])
 			new_sample["ocr_tokens"].append(sample['ocr_tokens'][first_page:last_page])       
-
+			new_sample["answer_type"].append(sample["questions"][i]["answer_type"])
 		return new_sample
 
 def build_dude(config, split):
@@ -189,7 +190,7 @@ def build_dude(config, split):
 	
 	if True:#split != "train":
 		# Check if preprocessed dataset exists
-		preprocessed_path = os.path.join(config["preprocessed_dir"], "preprocessed", f"DUDE_{split}")
+		preprocessed_path = os.path.join(config["preprocessed_dir"], "preprocessed2", f"DUDE_{split}")
 		if os.path.exists(preprocessed_path):
 			print(f"Loading preprocessed DUDE dataset from {preprocessed_path}...")
 			dataset = load_from_disk(preprocessed_path)

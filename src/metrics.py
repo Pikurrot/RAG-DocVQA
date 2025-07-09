@@ -79,6 +79,11 @@ class Evaluator:
 				batch_accuracy.append(accuracy)
 				batch_anls.append(anls)
 
+		print("\n-GT: ", gt_answers)
+		print("-Pred: ", preds)
+		print("-Accuracy: ", batch_accuracy)
+		print("-ANLS: ", batch_anls)
+
 		return {
 			"accuracy": batch_accuracy,
 			"anls": batch_anls,
@@ -218,7 +223,7 @@ class Evaluator:
 		if len(pred) == 0:
 			return 0
 
-		if answer_type == "not-answerable":
+		if answer_type == "not-answerable" or "" in gt:
 			return 1 if pred in ["", "none", "NA", None, []] else 0
 
 		if pred == "none" and answer_type != "not-answerable":

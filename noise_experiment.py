@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import sys
@@ -177,43 +177,69 @@ def run_experiment(model, config, noise_pages, repetitions):
 
 if __name__ == "__main__":
 	# Prepare model and dataset
+	# args = {
+	# 	"use_RAG": False,
+	# 	"model": "RAGVT5",
+	# 	"dataset": "DUDE-Noise", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
+	# 	"embed_model": "BGE", # BGE / VT5 / JINA
+	# 	"reranker_model": "BGE",
+	# 	"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
+	# 	"add_sep_token": False,
+	# 	"batch_size": 10, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
+	# 	"chunk_num": 20,
+	# 	"chunk_size": 60,
+	# 	"chunk_size_tol": 0.2,
+	# 	"overlap": 10,
+	# 	"include_surroundings": 0,
+	# 	# "model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
+	# 	# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
+	# 	"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/best.ckpt",
+	# 	# "model_weights": "rubentito/vt5-base-spdocvqa",
+	# 	# "embed_weights": "BAAI/bge-small-en-v1.5",
+	# 	"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
+	# 	# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
+	# 	"reranker_weights": "BAAI/bge-reranker-v2-m3",
+	# 	"lora_weights": "",
+	# 	# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
+	# 	"reorder_chunks": False,
+	# 	"rerank_filter_tresh": 0,
+	# 	"rerank_max_chunk_num": 10,
+	# 	"rerank_min_chunk_num": 1,
+	# 	# "use_precomputed_layouts": True,
+	# 	# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa_sem.npz"
+	# 	"mix_noise_pages": True,
+	# 	"qwen_downsize_images": False,
+	# }
 	args = {
 		"use_RAG": True,
-		"model": "RAGVT5",
-		"dataset": "DUDE-Noise", # MP-DocVQA / Infographics / DUDE / MMLongBenchDoc
-		"embed_model": "BGE", # BGE / VT5 / JINA
-		"reranker_model": "BGE",
-		"page_retrieval": "Concat", # Oracle / Concat / Logits / Maxconf / AnyConf / MaxConfPage / AnyConfPage / MajorPage / WeightMajorPage / AnyConfOracle / Custom (HiVT5 only)
-		"add_sep_token": False,
-		"batch_size": 1, # 50 Oracle / Concat / MajorPage / WeightMajorPage / AnyConfOracle, 32 MaxConf / AnyConf, 16 MaxConfPage / AnyConfPage
-		"chunk_num": 20,
-		"chunk_size": 60,
-		"chunk_size_tol": 0.2,
-		"overlap": 10,
-		"include_surroundings": 0,
-		# "model_weights": "Qwen/Qwen2.5-VL-7B-Instruct",
-		# "model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_mp-docvqa_train_generator_mpdocvqa/best.ckpt",
-		"model_weights": "/data/users/elopez/checkpoints/ragvt5_concat_dude_train_generator_dude/best.ckpt",
-		# "model_weights": "rubentito/vt5-base-spdocvqa",
-		# "embed_weights": "BAAI/bge-small-en-v1.5",
-		"embed_weights": "/data/users/elopez/models/bge-finetuned/checkpoint-820", # or VT5
-		# "embed_weights": "/data/users/elopez/models/bge-finetuned-info-30/checkpoint-540",
-		"reranker_weights": "BAAI/bge-reranker-v2-m3",
-		"lora_weights": "",
-		# "lora_weights": "/data/users/elopez/checkpoints/RAGVT5_lora_2025-03-31_09-52-23/checkpoint-900",
-		"reorder_chunks": False,
-		"rerank_filter_tresh": 0,
-		"rerank_max_chunk_num": 10,
-		"rerank_min_chunk_num": 1,
-		# "use_precomputed_layouts": True,
-		# "precomputed_layouts_path": "/data/users/elopez/data/images_layouts_dit_s2_spa_sem.npz"
+		"model": "RAGPix2Struct",
+		# "layout_model": "DIT",
+		"dataset": "MP-DocVQA-Noise", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
+		"batch_size": 2,
+		"layout_batch_size": 4,
+		"embedder_batch_size": 16,
+		"use_layout_labels": True,
+		"chunk_mode": "horizontal",
+		"chunk_num": 5,
+		"patch_size": 512,
+		"overlap": True,
+		"include_surroundings": (0,0),
+		"model_weights": "google/pix2struct-docvqa-base",
+		# "model_weights": "google/pix2struct-infographics-vqa-base",
+		# "layout_model_weights": "cmarkea/dit-base-layout-detection",
+		# "use_precomputed_layouts": False,
+		# "precomputed_layouts_path": "/data/users/elopez/infographics/images_layouts_dit_s2_spa.npz",
+		# "cluster_layouts": True,
+		# "cluster_mode": "spatial",
+		# "calculate_n_clusters": "best"
+		"mix_noise_pages": True,
 	}
 
 	extra_args = {
 		# "visible_devices": "2,4",
 		"device": "cuda:0",
 		"save_folder": "32-experiment-noise",
-		"save_name_append": "noise-pages-v2-ragvt5-dude",
+		"save_name_append": "noise-pages-v2-pix2struct-mix",
 		"val_size": 1.0,
 		"log_wandb": False,
 		"log_media_interval": 10,

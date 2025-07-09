@@ -2462,3 +2462,37 @@ class VisualRetriever:
 		similarities = self._get_similarities(patch_embeddings, question_embeddings)
 		top_k, page_indices = self._get_top_k(similarities, patches_flatten_indices, patches_matrix_list, patches_xyxy, images)
 		return top_k, page_indices
+
+
+class NotAnswerableClassifier(nn.Module):
+	"""
+	A MLP that takes question, chunks and answer embeddings and outputs a probability of the answer being not answerable.
+	"""
+	def __init__(self, config: dict):
+		self.config = config
+		emb_dim = config["emb_dim"]
+		self.input_dim = emb_dim * 2
+		self.hidden_dim = config["hidden_dim"]
+		self.num_layers = config["num_layers"]
+		self.mlp = MLP(self.input_dim, self.hidden_dim, 1, self.num_layers)
+
+	def forward(
+			self,
+			input_embeddings: torch.Tensor, # (bs, seq_len, emb_dim)
+			answer_embeddings: torch.Tensor, # (bs, seq_len2, emb_dim)
+	):
+		input_embeddings_mean = input_embeddings.mean(dim=1) # (bs, emb_dim)
+		answer_embeddings_mean = answer_embeddings.mean(dim=1) # (bs, emb_dim)
+		embeddings = torch.cat([input_embeddings_mean, answer_embeddings_mean], dim=1) # (bs, input_dim)
+		out = self.mlp(embeddings) # (bs, 1)
+		out = torch.sigmoid(out)
+		return out # (bs, 1)
+	
+	def update_results(
+			self,
+			results: dict,
+			input_embeddings: torch.Tensor,
+			answer_embeddings: torch.Tensor
+	) -> dict:
+		probs = self.forward(input_embeddings, answer_embeddings)
+		# TODO: Finish this

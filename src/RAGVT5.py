@@ -8,7 +8,8 @@ from src._modules import (
 	Retriever,
 	Reranker,
 	LayoutModel,
-	get_layout_model_map
+	get_layout_model_map,
+	NotAnswerableClassifier
 )
 from src.utils import flatten, concatenate_patches
 from typing import Any
@@ -54,6 +55,7 @@ class RAGVT5(torch.nn.Module):
 		self.embed_weights = config.get("embed_weights", "VT5")
 		self.reranker_weights = config.get("reranker_weights", None)
 		self.add_sep_token = config.get("add_sep_token", False)
+		self.use_not_answerable_classifier = config.get("use_not_answerable_classifier", None)
 		self.cache_dir = config.get("cache_dir", None)
 		print(f"Using {self.cache_dir} as cache folder")
 		self.train_layout = config.get("train_layout", False)
@@ -64,6 +66,7 @@ class RAGVT5(torch.nn.Module):
 			config.get("train_visual_embedding", False) or
 			config.get("train_layout_embedding", False)
 		)
+		self.train_not_answerable_classifier = config.get("train_not_answerable_classifier", False)
 		self.train_mode = False
 
 		if "qwen" in self.model_path.lower():
@@ -100,6 +103,16 @@ class RAGVT5(torch.nn.Module):
 			else:
 				self.reranker = None
 			self.retriever = Retriever(config)
+			if self.use_not_answerable_classifier:
+				if self.use_not_answerable_classifier.lower() == "mlp":
+					nac_config = config.get("not_answerable_mlp", {})
+				else:
+					raise ValueError(f"Not answerable classifier {self.use_not_answerable_classifier} not supported")
+				nac_config["emb_dim"] = 768 # VT5 embedding dim
+				# nac_config["emb_dim"] = self.embedder.get_embedding_dim()
+				self.not_answerable_classifier = NotAnswerableClassifier(nac_config)
+			else:
+				self.not_answerable_classifier = None
 
 		if self.add_sep_token:
 			# Add the chunk separator token to the tokenizer if not already present
@@ -131,6 +144,8 @@ class RAGVT5(torch.nn.Module):
 			self.embedder.train()
 		if self.train_generator:
 			self.generator.train()
+		if self.train_not_answerable_classifier:
+			self.not_answerable_classifier.train()
 		self.train_mode = True
 
 	def online_retrieve(
@@ -361,7 +376,8 @@ class RAGVT5(torch.nn.Module):
 				new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			with (nullcontext() if self.train_mode and self.train_generator else torch.no_grad()):
-				result = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
+				result, input_embeds = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
+			
 		elif self.page_retrieval in ("maxconf", "anyconf", "maxconfpage", "anyconfpage", "anyconforacle"):
 			# Generate for each top k chunk
 			results = []  # (bs, 4, k)

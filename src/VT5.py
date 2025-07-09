@@ -99,6 +99,14 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 		if self.use_layout_labels != "Default":
 			self.layout_embedding.train()
 
+	def process_text(
+		self,
+		text: list # (bs,)
+	) -> torch.Tensor:
+		tokenized_text = self.tokenizer(text, return_tensors="pt", padding=False, truncation=False)
+		embeddings = self.language_backbone.shared(tokenized_text.input_ids)
+		return embeddings # (bs, seq_len, emb_dim)
+
 	def prepare_inputs_for_vqa(
 			self,
 			question: list, # (bs,)
@@ -260,7 +268,7 @@ class VT5ForConditionalGeneration(PreTrainedModel):
 
 			pred_answer_pages = None
 
-		return outputs, pred_answers, pred_answer_pages, pred_answers_conf
+		return (outputs, pred_answers, pred_answer_pages, pred_answers_conf), input_embeds
 
 	def get_answer_from_model_output(
 			self,

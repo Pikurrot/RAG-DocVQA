@@ -28,6 +28,7 @@ class RAGPix2Struct(torch.nn.Module):
 		self.use_layout_labels = config.get("use_layout_labels", "Default")
 		self.chunk_mode = config.get("chunk_mode", "horizontal")
 		self.layout_map = get_layout_model_map(config)
+		self.norag_perpage_batch_size = config.get("norag_perpage_batch_size", 1)
 		print(f"Loading model from {self.model_path}")
 		if self.use_RAG:
 			if self.use_precomputed_layouts or not self.use_RAG:
@@ -275,11 +276,39 @@ class RAGPix2Struct(torch.nn.Module):
 				question = batch["questions"][b]
 				prompt = question
 				input_patches = batch["images"][b]
-				batch_inputs = self.default_processor(images=input_patches, text=prompt, return_tensors="pt").to(self.device)
-				outputs = self.generator.generate(**batch_inputs, output_scores=True, return_dict_in_generate=True)
-				confidences = torch.tensor(get_generative_confidence(outputs))
-				best_page = torch.argmax(confidences)
-				output_ids.append(outputs.sequences[best_page])
+				
+				# Split input_patches into batches of size norag_perpage_batch_size
+				all_outputs = []
+				all_confidences = []
+				
+				for i in range(0, len(input_patches), self.norag_perpage_batch_size):
+					batch_patches = input_patches[i:i+self.norag_perpage_batch_size]
+					batch_inputs = self.default_processor(images=batch_patches, text=prompt, return_tensors="pt").to(self.device)
+					batch_outputs = self.generator.generate(**batch_inputs, output_scores=True, return_dict_in_generate=True)
+					batch_confidences = torch.tensor(get_generative_confidence(batch_outputs))
+					
+					all_outputs.extend(batch_outputs.sequences)  # Use extend instead of append
+					all_confidences.append(batch_confidences)
+				
+				# Concatenate all confidences
+				all_confidences_concat = torch.cat(all_confidences, dim=0)
+				
+				# Pad all output sequences to the same length
+				max_length = max([len(seq) for seq in all_outputs])
+				padded_outputs = []
+				for seq in all_outputs:
+					if len(seq) < max_length:
+						padded_seq = torch.cat((seq, torch.full((max_length - len(seq),), self.default_processor.tokenizer.pad_token_id).to(self.device)))
+					else:
+						padded_seq = seq
+					padded_outputs.append(padded_seq)
+				
+				# Stack all padded outputs
+				all_outputs_concat = torch.stack(padded_outputs, dim=0)
+				
+				# Find the best page across all batches
+				best_page = torch.argmax(all_confidences_concat)
+				output_ids.append(all_outputs_concat[best_page])
 				pred_answer_pages.append([best_page.item()])  # Wrap in list to match RAG format
 			# pad the output ids
 			max_length = max([len(ids) for ids in output_ids])

@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import sys
@@ -211,13 +211,14 @@ if __name__ == "__main__":
 	# 	"qwen_downsize_images": False,
 	# }
 	args = {
-		"use_RAG": True,
+		"use_RAG": False,
 		"model": "RAGPix2Struct",
 		# "layout_model": "DIT",
 		"dataset": "MP-DocVQA-Noise", # MP-DocVQA / Infographics / DUDE / SP-DocVQA
-		"batch_size": 2,
+		"batch_size": 1,
 		"layout_batch_size": 4,
 		"embedder_batch_size": 16,
+		"norag_perpage_batch_size": 20,
 		"use_layout_labels": True,
 		"chunk_mode": "horizontal",
 		"chunk_num": 5,
@@ -239,7 +240,7 @@ if __name__ == "__main__":
 		# "visible_devices": "2,4",
 		"device": "cuda:0",
 		"save_folder": "32-experiment-noise",
-		"save_name_append": "noise-pages-v2-pix2struct-mix",
+		"save_name_append": "noise-pages-v2-pix2struct-norag-mix",
 		"val_size": 1.0,
 		"log_wandb": False,
 		"log_media_interval": 10,

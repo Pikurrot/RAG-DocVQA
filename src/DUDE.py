@@ -1,6 +1,7 @@
 import os
 import io
 import random
+from tqdm import tqdm
 from PIL import Image
 from datasets import load_dataset, load_from_disk
 from torch.utils.data import Dataset
@@ -222,6 +223,46 @@ def build_dude(config, split):
 	dataset.name = "DUDE"
 
 	return dataset
+
+
+def create_balanced_nac_dataset(dataset, target_ratio=0.5):	
+	# Separate samples by answer type
+	not_answerable_samples = []
+	answerable_samples = []
+	
+	for i, sample in tqdm(enumerate(dataset)):
+		if sample["answer_type"] == "not-answerable":
+			not_answerable_samples.append(i)
+		else:
+			answerable_samples.append(i)
+	
+	n_not_answerable = len(not_answerable_samples)
+	n_answerable = len(answerable_samples)
+	
+	print(f"Original dataset: {n_not_answerable} not-answerable, {n_answerable} answerable")
+	
+	# target_ratio = n_not_answerable / (n_not_answerable + n_answerable_sampled)
+	# Solving for n_answerable_sampled:
+	n_answerable_sampled = int(n_not_answerable * (1 - target_ratio) / target_ratio)
+	n_answerable_sampled = min(n_answerable_sampled, n_answerable)
+	
+	answerable_sampled = random.sample(answerable_samples, n_answerable_sampled)
+	
+	# Combine indices
+	balanced_indices = not_answerable_samples + answerable_sampled
+	random.shuffle(balanced_indices)
+	
+	# Create subset dataset
+	balanced_dataset = dataset.select(balanced_indices)
+	
+	final_not_answerable = len(not_answerable_samples)
+	final_answerable = len(answerable_sampled)
+	final_ratio = final_not_answerable / (final_not_answerable + final_answerable)
+	
+	print(f"Balanced dataset: {final_not_answerable} not-answerable, {final_answerable} answerable")
+	print(f"Final ratio: {final_ratio:.3f} not-answerable")
+	
+	return balanced_dataset
 
 
 class DUDE_NoisePages(DUDE):

@@ -2469,12 +2469,16 @@ class NotAnswerableClassifier(nn.Module):
 	A MLP that takes question, chunks and answer embeddings and outputs a probability of the answer being not answerable.
 	"""
 	def __init__(self, config: dict):
+		super().__init__()
 		self.config = config
 		emb_dim = config["emb_dim"]
 		self.input_dim = emb_dim * 2
 		self.hidden_dim = config["hidden_dim"]
 		self.num_layers = config["num_layers"]
 		self.mlp = MLP(self.input_dim, self.hidden_dim, 1, self.num_layers)
+
+	def to(self, device):
+		self.mlp.to(device)
 
 	def forward(
 			self,
@@ -2490,9 +2494,14 @@ class NotAnswerableClassifier(nn.Module):
 	
 	def update_results(
 			self,
-			results: dict,
+			result: dict,
 			input_embeddings: torch.Tensor,
 			answer_embeddings: torch.Tensor
-	) -> dict:
+	) -> tuple:
 		probs = self.forward(input_embeddings, answer_embeddings)
-		# TODO: Finish this
+		pred_answers = result[1] # (bs, 1)
+		pred_answers_conf = result[3] # (bs, 1)
+		not_answerable = probs > 0.5
+		pred_answers[not_answerable] = ""
+		pred_answers_conf[not_answerable] = 0.0
+		return (result[0], pred_answers, result[2], pred_answers_conf), probs

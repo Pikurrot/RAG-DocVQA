@@ -42,19 +42,44 @@ def train_epoch(
 	# 	# "layout_embedding": model.generator.layout_embedding
 	# }
 	modules = {
-		"generator": model.generator
+		"generator": model.generator,
+		"not_answerable_classifier": model.not_answerable_classifier if model.use_not_answerable_classifier else None
 	}
 	print_first_samples = config.get("print_first_samples", 0)
 
 	for batch_idx, batch in enumerate(tqdm(data_loader)):
 		gt_answers = batch["answers"]
+		if data_loader.dataset.name == "DUDE":
+			answer_type = batch["answer_type"] # (bs,)
+			not_answerable = [answer_type[i] == "not-answerable" for i in range(len(answer_type))]
+			not_answerable_gt = torch.tensor(not_answerable, dtype=torch.float32, device=config["device"]) # (bs,)
 		try:
-			outputs, pred_answers, pred_answer_pages, _, _ = model.forward(
+			outputs, pred_answers, pred_answer_pages, _, retrieval = model.forward(
 				batch,
 				return_pred_answer=True,
-				return_retrieval=False
+				return_retrieval=True  # Changed to True to get retrieval info
 			)
+			if "not_answerable_probs" in retrieval:
+				not_answerable_pred = retrieval["not_answerable_probs"].squeeze(-1)  # (bs,)
+			
+			# Calculate main loss
 			loss = outputs.loss + outputs.ret_loss if hasattr(outputs, "ret_loss") else outputs.loss
+			
+			# Add NotAnswerableClassifier loss if applicable
+			if (model.use_not_answerable_classifier and 
+				model.train_not_answerable_classifier and 
+				data_loader.dataset.name == "DUDE" and
+				"not_answerable_probs" in retrieval):
+				
+				nac_loss_weight = config.get("nac_loss_weight", 1.0)
+				nac_loss = torch.nn.functional.binary_cross_entropy(
+					not_answerable_pred, 
+					not_answerable_gt
+				)
+				loss = loss + nac_loss_weight * nac_loss
+				
+				nac_pred_binary = (not_answerable_pred > 0.5).float()
+				nac_accuracy = (nac_pred_binary == not_answerable_gt).float().mean()
 
 			loss.backward()
 			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=3.0)
@@ -62,6 +87,8 @@ def train_epoch(
 			# Log gradients
 			grad_norms = {}
 			for name, module in modules.items():
+				if module is None:
+					continue
 				# Only consider modules with parameters that have gradients
 				if any(p.grad is not None for p in module.parameters()):
 					norm = get_grad_norm(module)
@@ -99,6 +126,10 @@ def train_epoch(
 				ret_metric = evaluator.get_retrieval_metric(batch.get("answer_page_idx", None), pred_answer_pages)
 				batch_ret_prec = np.mean(ret_metric)
 				log_dict["Train/Batch Ret. Prec."] = batch_ret_prec
+
+			if model.use_not_answerable_classifier:
+				log_dict["Train/Batch NAC Loss"] = nac_loss.item()
+				log_dict["Train/Batch NAC Accuracy"] = nac_accuracy.item()
 
 			logger.log(log_dict, step=logger.current_epoch * logger.len_dataset + batch_idx)
 		except torch.OutOfMemoryError:
@@ -185,7 +216,16 @@ if __name__ == "__main__":
 		"train_language_backbone": False,
 		"train_spatial_embedding": False,
 		"train_visual_embedding": False,
-		"train_not_answerable_classifier": True
+
+		"train_not_answerable_classifier": True,
+		"balance_nac_dataset": True,
+		"nac_dataset_ratio": 0.5,
+		"nac_loss_weight": 1.0,
+		"not_answerable_mlp": {
+			"hidden_dim": 256,
+			"num_layers": 2,
+			"emb_dim": 768
+		}
 	}
 	# args = {
 	# 	"use_RAG": True,

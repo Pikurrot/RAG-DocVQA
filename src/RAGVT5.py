@@ -132,6 +132,8 @@ class RAGVT5(torch.nn.Module):
 			self.embedder.to(device)
 			if self.layout_model is not None:
 				self.layout_model.to(device)
+			if self.not_answerable_classifier is not None:
+				self.not_answerable_classifier.to(device)
 
 	def eval(self):
 		self.generator.eval()
@@ -376,7 +378,10 @@ class RAGVT5(torch.nn.Module):
 				new_batch["images"] = [concatenate_patches(b, mode="grid") for b in top_k_patches]  # (bs, h, w, 3)
 			new_batch["answers"] = batch["answers"].copy()  # (bs, n_answers)
 			with (nullcontext() if self.train_mode and self.train_generator else torch.no_grad()):
-				result, input_embeds = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs)
+				result, input_embeds = self.generator(new_batch, return_pred_answer=return_pred_answer)  # (4, bs), _
+				if self.use_not_answerable_classifier:
+					answer_embeds = self.generator.process_text(result[1])
+					result, probs = self.not_answerable_classifier.update_results(result, input_embeds, answer_embeds)
 			
 		elif self.page_retrieval in ("maxconf", "anyconf", "maxconfpage", "anyconfpage", "anyconforacle"):
 			# Generate for each top k chunk
@@ -512,6 +517,10 @@ class RAGVT5(torch.nn.Module):
 					"input_words": [flatten(b) for b in top_k_words_text],
 					"input_boxes": [flatten(b) for b in top_k_words_boxes],
 					"input_patches": [concatenate_patches(b, mode="grid") for b in top_k_patches]
+				})
+			if self.use_not_answerable_classifier:
+				retrieval.update({
+					"not_answerable_probs": probs
 				})
 		else:
 			retrieval = None

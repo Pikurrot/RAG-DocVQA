@@ -4,7 +4,7 @@ from src.HiVT5 import Proxy_HiVT5
 from src.RAGPix2Struct import RAGPix2Struct
 from src.MP_DocVQA import MPDocVQA, MPDocVQA_NoisePagesv2
 from src.Infographics import Infographics
-from src.DUDE import DUDE, DUDE_NoisePages
+from src.DUDE import DUDE, DUDE_NoisePages, create_balanced_nac_dataset
 from src.SP_DocVQA import SPDocVQA
 from src.MMLongBenchDoc import MMLongBenchDoc
 from transformers import get_scheduler
@@ -61,6 +61,8 @@ def build_dataset(
 		dataset = Infographics(dataset_config)
 	elif config["dataset_name"].lower() == "dude":
 		dataset = DUDE(dataset_config)
+		if config.get("balance_nac_dataset", False):
+			dataset = create_balanced_nac_dataset(dataset, config.get("nac_dataset_ratio", 0.5))
 	elif config["dataset_name"].lower() == "dude-noise":
 		dataset = DUDE_NoisePages(dataset_config)
 	elif config["dataset_name"].lower() == "sp-docvqa":

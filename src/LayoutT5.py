@@ -8,7 +8,7 @@ from transformers.utils import (
 	replace_return_docstrings,
 )
 from typing import Optional, Tuple, Union
-from transformers.models.t5.modeling_t5 import T5_INPUTS_DOCSTRING, _CONFIG_FOR_DOC, __HEAD_MASK_WARNING_MSG
+from transformers.models.t5.modeling_t5 import auto_docstring
 import warnings
 from dataclasses import dataclass
 
@@ -26,8 +26,7 @@ class LayoutT5ForConditionalGeneration(T5ForConditionalGeneration):
 		# print("layout classifier weight:", self.layout_classifier.weight.shape, self.layout_classifier.weight)
 		# print("layout classifier bias:", self.layout_classifier.bias.shape, self.layout_classifier.bias)
 
-	@add_start_docstrings_to_model_forward(T5_INPUTS_DOCSTRING)
-	@replace_return_docstrings(output_type=Seq2SeqLMOutput, config_class=_CONFIG_FOR_DOC)
+	@auto_docstring
 	def forward(
 		self,
 		input_ids: Optional[torch.LongTensor] = None,
@@ -85,7 +84,6 @@ class LayoutT5ForConditionalGeneration(T5ForConditionalGeneration):
 		# FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
 		if head_mask is not None and decoder_head_mask is None:
 			if self.config.num_layers == self.config.num_decoder_layers:
-				warnings.warn(__HEAD_MASK_WARNING_MSG, FutureWarning)
 				decoder_head_mask = head_mask
 
 		# Encode if needed (training, first prediction pass)

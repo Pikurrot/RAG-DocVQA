@@ -1,4 +1,7 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 import argparse
 import numpy as np
 import datetime
@@ -269,7 +272,7 @@ if __name__ == "__main__":
 	}
 	args.update(extra_args)
 
-	os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
+	# os.environ["CUDA_VISIBLE_DEVICES"] = args["visible_devices"]
 	args = argparse.Namespace(**args)
 	config = load_config(args)
 	start_time = time.time()

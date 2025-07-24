@@ -106,6 +106,7 @@ class DUDE(Dataset):
 			"answers": answers,
 			"answer_page_idx": answer_page_idx,
 			"num_pages": num_pages,
+			"answer_type": record["answer_type"],
 			"load_time": time()-start_time
 		}
 

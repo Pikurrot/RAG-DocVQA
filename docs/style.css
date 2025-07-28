@@ -1,12 +1,78 @@
-body {
-	font-family: sans-serif;
-	text-align: center;
-	padding: 2rem;
-	background: #f0f0f0;
+/* --- Global page frame ------------------------------------ */
+html,body{
+	margin:0;
+	background:#02021a;          /* colour outside the thin column */
+	font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
   }
-  button {
-	padding: 0.5rem 1rem;
-	font-size: 1rem;
-	cursor: pointer;
+  
+  /* --- Centred thin column ---------------------------------- */
+  .page{
+	width:90%;
+	max-width:800px;          /* stays narrow on big screens */
+	margin:0 auto;
+	min-height:100vh;
+	box-shadow:0 0 20px rgba(0,0,0,.75);  /* subtle lift */
+  }
+  
+  /* --- Gradient header -------------------------------------- */
+  .hero{
+	text-align:center;
+	padding:3rem 1rem 2.5rem;
+	background:linear-gradient(to bottom,#2689ff 0%,#031331 100%);
+	color:#fff;
+  }
+  
+  .paper-title{
+	margin:0 0 .75rem;
+	font-size:1.75rem;
+	font-weight:700;          /* bold */
+  }
+  
+  .authors,
+  .conference{
+	margin:.25rem 0;
+	font-weight:400;
+	font-size:1rem;
+  }
+  
+  /* --- Body area below header ------------------------------- */
+  .content{
+	background:#031331;       /* solid dark-blue after gradient ends */
+	min-height:60vh;          /* simply fills the rest for now */
+  }
+  
+  /* Optional: keep text centred */
+  .content{
+	text-align:center;
+	color:#eee;
+  }
+
+  .abstract p{
+	max-width:550px;          /* keep a narrow, paper-like column */
+	margin:0 auto;         /* centred within the page column   */
+	padding:0 1rem;
+	text-align:justify;       /* ruler-straight right edge        */
+	hyphens:auto;             /* enable automatic word breaks     */
+	line-height:1.3;
+	color:#ddd;
+  }
+
+/* --- Section title ---------------------------------------- */
+.section-title{
+	margin-top:0;
+	text-align:center;
+	font-size:1.25rem;
+	font-weight:600;
+	color:#fff;
+  }
+  
+  /* --- Centre plot image ------------------------------------ */
+  .plot{
+	text-align:center;
+	margin:2rem 0;
+  }
+  .plot img{
+	max-width:60%;
+	height:auto;
   }
   

@@ -2,12 +2,55 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>My GitHub Pages Site</title>
+  <title>Paper Title | ICDAR 2025 Workshop</title>
   <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
-  <h1>Welcome to my site!</h1>
-  <button id="btn">Click me</button>
-  <script src="script.js"></script>
+  <!-- Thin centred column -->
+  <div class="page">
+
+    <!-- Header with blue→dark-blue gradient -->
+    <header class="hero">
+      <h1 class="paper-title">Enhancing Document VQA Models via Retrieval-Augmented Generation</h1>
+      <p class="authors">Eric López · Artemis Llabrés · Ernest Valveny</p>
+      <p class="conference">ICDAR 2025 — Workshop on Machine Learning</p>
+    </header>
+
+    <!-- Main body begins below (empty for now) -->
+    <main class="content">
+		<h2 class="section-title">Abstract</h2>
+		<section class="abstract">
+			<p>
+			  Document Visual Question Answering (Document VQA) must
+			  cope with documents that span dozens of pages, yet leading systems still
+			  concatenate every page or rely on very large vision-language models, both
+			  of which are memory-hungry. Retrieval-Augmented Generation (RAG)
+			  offers an attractive alternative, first retrieving a concise set of relevant
+			  segments before generating answers from this selected evidence. In this
+			  paper, we systematically evaluate the impact of incorporating RAG into
+			  Document VQA through different retrieval variants—text-based retrieval
+			  using OCR tokens and purely visual retrieval without OCR—across mul­
+			  tiple models and benchmarks. Evaluated on the multi-page datasets
+			  MP-DocVQA, DUDE, and InfographicVQA, the text-centric variant im­
+			  proves the “concatenate-all-pages” baseline by up to +22.5 ANLS, while
+			  the visual variant achieves +5.0 ANLS improvement without requiring
+			  any text extraction. An ablation confirms that retrieval and reranking
+			  components drive most of the gain, whereas the layout-guided chunk­
+			  ing strategy—proposed in several recent works to leverage page struc­
+			  ture—fails to help on these datasets. Our experiments demonstrate that
+			  careful evidence selection consistently boosts accuracy across multiple
+			  model sizes and multi-page benchmarks, underscoring its practical value
+			  for real-world Document VQA.
+			</p>
+		  </section>
+		  <!-- Comparison bar-plot -->
+		<section class="plot">
+			<img src="images/comparison.png" alt="Performance comparison bar plot">
+		</section>
+  
+    </main>
+
+  </div>
 </body>
 </html>

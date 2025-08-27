@@ -1,56 +1,74 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Paper Title | ICDAR 2025 Workshop</title>
-  <link rel="stylesheet" href="style.css">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-  <!-- Thin centred column -->
-  <div class="page">
-
-    <!-- Header with blue→dark-blue gradient -->
-    <header class="hero">
-      <h1 class="paper-title">Enhancing Document VQA Models via Retrieval-Augmented Generation</h1>
-      <p class="authors">Eric López · Artemis Llabrés · Ernest Valveny</p>
-      <p class="conference">ICDAR 2025 — Workshop on Machine Learning</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAG-DocVQA | ICDAR 2025 Workshop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-nav" role="banner">
+      <div class="nav-inner">
+        <a class="brand" href="index.html">RAG-DocVQA</a>
+      </div>
     </header>
 
-    <!-- Main body begins below (empty for now) -->
-    <main class="content">
-		<h2 class="section-title">Abstract</h2>
-		<section class="abstract">
-			<p>
-			  Document Visual Question Answering (Document VQA) must
-			  cope with documents that span dozens of pages, yet leading systems still
-			  concatenate every page or rely on very large vision-language models, both
-			  of which are memory-hungry. Retrieval-Augmented Generation (RAG)
-			  offers an attractive alternative, first retrieving a concise set of relevant
-			  segments before generating answers from this selected evidence. In this
-			  paper, we systematically evaluate the impact of incorporating RAG into
-			  Document VQA through different retrieval variants—text-based retrieval
-			  using OCR tokens and purely visual retrieval without OCR—across mul­
-			  tiple models and benchmarks. Evaluated on the multi-page datasets
-			  MP-DocVQA, DUDE, and InfographicVQA, the text-centric variant im­
-			  proves the “concatenate-all-pages” baseline by up to +22.5 ANLS, while
-			  the visual variant achieves +5.0 ANLS improvement without requiring
-			  any text extraction. An ablation confirms that retrieval and reranking
-			  components drive most of the gain, whereas the layout-guided chunk­
-			  ing strategy—proposed in several recent works to leverage page struc­
-			  ture—fails to help on these datasets. Our experiments demonstrate that
-			  careful evidence selection consistently boosts accuracy across multiple
-			  model sizes and multi-page benchmarks, underscoring its practical value
-			  for real-world Document VQA.
-			</p>
-		  </section>
-		  <!-- Comparison bar-plot -->
-		<section class="plot">
-			<img src="images/comparison.png" alt="Performance comparison bar plot">
-		</section>
-  
+    <main class="content" id="home" tabindex="-1">
+      <section class="card card--paper">
+        <h1 class="intro-title">Enhancing Document VQA Models via Retrieval-Augmented Generation</h1>
+        <p class="intro-bio">Eric López · Artemis Llabrés · Ernest Valveny</p>
+        <p class="intro-bio">ICDAR 2025 — Workshop on Machine Learning</p>
+        <div class="proj-links">
+          <a class="proj-link" href="https://arxiv.org/abs/2508.18984" target="_blank" rel="noreferrer">
+            <img width="16" height="16" src="https://cdn.simpleicons.org/arxiv/000000" alt="arXiv" />
+            <span>arXiv</span>
+          </a>
+          <a class="proj-link" href="https://github.com/Pikurrot/RAG-DocVQA" target="_blank" rel="noreferrer">
+            <img width="16" height="16" src="https://cdn.simpleicons.org/github/000000" alt="GitHub" />
+            <span>GitHub</span>
+          </a>
+        </div>
+        <h2>Abstract</h2>
+        <div class="abstract">
+          <p>
+            Document Visual Question Answering (Document VQA) must cope with documents that span dozens of pages, yet leading systems still
+            concatenate every page or rely on very large vision-language models, both of which are memory-hungry. Retrieval-Augmented Generation (RAG)
+            offers an attractive alternative, first retrieving a concise set of relevant segments before generating answers from this selected evidence. In this
+            paper, we systematically evaluate the impact of incorporating RAG into Document VQA through different retrieval variants—text-based retrieval
+            using OCR tokens and purely visual retrieval without OCR—across multiple models and benchmarks. Evaluated on the multi-page datasets
+            MP-DocVQA, DUDE, and InfographicVQA, the text-centric variant improves the “concatenate-all-pages” baseline by up to +22.5 ANLS, while
+            the visual variant achieves +5.0 ANLS improvement without requiring any text extraction. An ablation confirms that retrieval and reranking
+            components drive most of the gain, whereas the layout-guided chunking strategy—proposed in several recent works to leverage page structure—
+            fails to help on these datasets. Our experiments demonstrate that careful evidence selection consistently boosts accuracy across multiple model
+            sizes and multi-page benchmarks, underscoring its practical value for real-world Document VQA.
+          </p>
+        </div>
+      </section>
+
+      <section class="card card--media">
+        <h2>Results Overview</h2>
+        <div class="split">
+          <div class="text">
+            <p>
+              Comparison of baseline Document VQA models with RAG variants across multi-page datasets. RAG notably boosts performance while reducing the
+              need to process entire documents, especially for text-centric retrieval.
+            </p>
+          </div>
+          <figure class="media">
+            <img src="assets/comparison.png" alt="Bar chart comparing baseline vs RAG variants on MP-DocVQA, DUDE, and InfographicVQA" />
+          </figure>
+        </div>
+      </section>
+
+      <footer id="site-footer" class="site-footer">
+        <div>© 2025 RAG-DocVQA — All rights reserved.</div>
+      </footer>
     </main>
 
-  </div>
-</body>
-</html>
+    <script type="module" src="site.js"></script>
+    <script type="module" src="site-data.js"></script>
+  </body>
+</html> 
